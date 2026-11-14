@@ -10,7 +10,8 @@ public class WreckingBall : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+		// Lot 9: per-piece Geometry Collection debris (component, removal facades, physics proxy).
+		PrivateDependencyModuleNames.AddRange(new string[] { "GeometryCollectionEngine", "Chaos" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
