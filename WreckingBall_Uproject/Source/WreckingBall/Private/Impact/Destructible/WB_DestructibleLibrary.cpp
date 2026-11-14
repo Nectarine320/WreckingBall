@@ -1,7 +1,43 @@
 #include "Impact/Destructible/WB_DestructibleLibrary.h"
 
+#include "Components/MeshComponent.h"
 #include "GameFramework/Actor.h"
 #include "Impact/Destructible/WB_DestructibleDependent.h"
+#include "Materials/MaterialInterface.h"
+
+int32 UWB_DestructibleLibrary::GetSideFromNormal(const AActor* Wall, FVector Normal, float MinSideDot)
+{
+	if (!IsValid(Wall))
+	{
+		return 0;
+	}
+	const float SideDot = FVector::DotProduct(Normal.GetSafeNormal(), Wall->GetActorRightVector());
+	if (SideDot > MinSideDot)
+	{
+		return 1;
+	}
+	if (SideDot < -MinSideDot)
+	{
+		return -1;
+	}
+	return 0;
+}
+
+void UWB_DestructibleLibrary::ApplyMaterialOverrides(UMeshComponent* Mesh, const TArray<UMaterialInterface*>& Materials)
+{
+	if (!IsValid(Mesh))
+	{
+		return;
+	}
+	const int32 Count = FMath::Min(Materials.Num(), Mesh->GetNumMaterials());
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		if (Materials[Index])
+		{
+			Mesh->SetMaterial(Index, Materials[Index]);
+		}
+	}
+}
 
 void UWB_DestructibleLibrary::GetDependents(AActor* Parent, TArray<AActor*>& OutDependents)
 {
