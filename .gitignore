@@ -1,3 +1,11 @@
 /WreckingBall_Uproject/DerivedDataCache
 /WreckingBall_Uproject/Intermediate
 /WreckingBall_Uproject/Saved
+/WreckingBall_Uproject/Binaries
+/WreckingBall_Uproject/.vs
+/WreckingBall_Uproject/.vscode
+/WreckingBall_Uproject/Backup
+/WreckingBall_Uproject/UpgradeLog.htm
+*.sln
+*.slnx
+*.code-workspace
