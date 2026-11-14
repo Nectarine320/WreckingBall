@@ -16,6 +16,8 @@ Jeu de soccer en multijoueur local, de 2 à 4 joueurs, dans des lieux improvisé
 - Classe des fichiers dans des sous-dossiers par système, en miroir dans `Public/` et `Private/` (ex. `Public/Impact/Budget/`, `Private/Impact/Budget/`).
 - **Un `.h` placé dans un sous-dossier de `Public` s'inclut avec ce sous-dossier** : `#include "Impact/Budget/WB_PhysicsBudgetManager_Base.h"`. L'oubli a déjà causé une erreur C1083.
 - Le C++ sert de **fondation exposée à Blueprint** : `UCLASS(Blueprintable)`, `UFUNCTION(BlueprintCallable / BlueprintPure)`, `UPROPERTY(EditAnywhere, BlueprintReadWrite)`, avec toujours une `Category`. Le gameplay et le réglage restent en Blueprint et en Data Assets, sauf si l'utilisateur décide autrement.
+- **Quand passer au C++** : quand Blueprint ne donne pas le résultat voulu ou impose une limite (API absente en Blueprint, coût d'exécution, limite des outils MCP).
+- **Essai décidé le 2026-11-14** : le prochain mandat se fait le plus possible en C++, pour comparer la dynamique avec le travail en Blueprint. Ensuite, on décide avec l'utilisateur de la répartition à garder.
 - **Chaque `UPROPERTY` et `UFUNCTION` exposée reçoit un commentaire `/** … */` en anglais** : Unreal en fait l'infobulle dans l'éditeur, comme la Description d'une variable Blueprint.
 - Nommage des classes : préfixe Unreal habituel (`U`, `A`, `F`, `E`) + nom en PascalCase. Une classe qui sert de base à plusieurs enfants prend le suffixe `_Base` (règle du projet, même chose en Blueprint).
 - Nouvelle fonctionnalité dans une classe de base partagée : passe par une option booléenne **désactivée par défaut**.
@@ -41,3 +43,9 @@ Jeu de soccer en multijoueur local, de 2 à 4 joueurs, dans des lieux improvisé
 - **Ne commite pas et ne pousse pas sans que l'utilisateur le demande.**
 - Ne commite jamais ces dossiers : `Binaries/`, `Intermediate/`, `DerivedDataCache/`, `Saved/`, `.vs/`, `.vscode/`, ni les fichiers `*.sln`, `*.slnx`, `*.code-workspace`. À commiter : `Source/`, `Config/`, `Content/`, `WreckingBall.uproject`, `Docs/`, `CLAUDE.md`.
 - Réponses concises : dis ce qui a changé et pourquoi, en une ligne. Les explications détaillées seulement si l'utilisateur les demande.
+- **Pendant le travail** : avant ou juste après chaque changement, une courte ligne qui dit quel fichier, Blueprint ou asset change, et quoi. Le raisonnement interne complet n'est pas nécessaire, sauf pour un changement majeur.
+- **Rapport de fin d'action** :
+  - un titre par sujet, avec son type entre parenthèses à côté : **(C++)**, **(Blueprint)**, **(Data Asset)**, **(Config)** pour `Build.cs`, `Target.cs` et `.ini`, **(Git)**, **(Docs)** ;
+  - sous chaque titre, des puces pour ce qui a changé ;
+  - toujours une section **À vérifier / À faire de ton côté** quand quelque chose n'est pas testé ou que l'utilisateur a une action à faire ;
+  - un résumé court de la démarche à la fin.
