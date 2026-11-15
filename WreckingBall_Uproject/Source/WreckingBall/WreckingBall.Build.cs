@@ -16,6 +16,9 @@ public class WreckingBall : ModuleRules
 		// Lot 10: physical materials and surface types for impact feedback.
 		PrivateDependencyModuleNames.Add("PhysicsCore");
 
+		// Lot 10: player feedback catalog (Gameplay Tags, project setting).
+		PrivateDependencyModuleNames.AddRange(new string[] { "GameplayTags", "DeveloperSettings" });
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
