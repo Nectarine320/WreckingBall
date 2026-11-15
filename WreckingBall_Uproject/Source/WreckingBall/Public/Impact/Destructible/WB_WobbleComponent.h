@@ -51,6 +51,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Wobble")
 	bool StartWobbleFromNormal(FVector ImpactNormal, float Damage, const FWB_WobbleSettings& Settings);
 
+	/**
+	 * Starts a small wobble for a hit the destructible refused (damage below its MinDamagePerHit). Does nothing unless Settings.bWobbleOnMinorHits is on and Damage is above 0.
+	 * Same pivot and side rules as StartWobbleFromNormal; the wobble is scaled down by the Minor Hits settings. Returns true when a wobble starts.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Wobble")
+	bool StartMinorHitWobbleFromNormal(FVector ImpactNormal, float Damage, const FWB_WobbleSettings& Settings);
+
 	/** Returns the pivot StartWobbleFromNormal would use for this hit normal (world space). None if no pivot is set. */
 	UFUNCTION(BlueprintPure, Category = "Wobble")
 	USceneComponent* GetPivotForNormal(FVector ImpactNormal) const;

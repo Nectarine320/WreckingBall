@@ -82,6 +82,15 @@ bool UWB_WobbleComponent::StartWobbleFromNormal(FVector ImpactNormal, float Dama
 	return StartWobbleFromImpact(GetPivotForNormal(ImpactNormal), ImpactNormal, Damage, Settings);
 }
 
+bool UWB_WobbleComponent::StartMinorHitWobbleFromNormal(FVector ImpactNormal, float Damage, const FWB_WobbleSettings& Settings)
+{
+	if (!Settings.bWobbleOnMinorHits || Damage <= 0.f)
+	{
+		return false;
+	}
+	return StartWobbleFromNormal(ImpactNormal, Damage, Settings);
+}
+
 bool UWB_WobbleComponent::StartWobbleFromImpact(USceneComponent* Pivot, FVector ImpactNormal, float Damage, const FWB_WobbleSettings& Settings)
 {
 	if (!IsValid(Pivot) || !IsWobbleEnabled(Settings))
@@ -104,8 +113,17 @@ bool UWB_WobbleComponent::StartWobbleFromImpact(USceneComponent* Pivot, FVector 
 	{
 		Alpha = Damage >= Settings.DamageStrong ? 1.f : 0.f;
 	}
-	const float AngleDeg = FMath::Lerp(Settings.AngleLight, Settings.AngleStrong, Alpha);
-	const float Duration = FMath::Lerp(Settings.DurationLight, Settings.DurationStrong, Alpha);
+	float AngleDeg = FMath::Lerp(Settings.AngleLight, Settings.AngleStrong, Alpha);
+	float Duration = FMath::Lerp(Settings.DurationLight, Settings.DurationStrong, Alpha);
+
+	// Minor hits: below DamageLight, scale the Light values down, from MinorHitMinScale at 0 damage to x1 at DamageLight.
+	if (Settings.bWobbleOnMinorHits && Settings.DamageLight > 0.f && Damage < Settings.DamageLight)
+	{
+		const float MinScale = FMath::Clamp(Settings.MinorHitMinScale, 0.f, 1.f);
+		const float Scale = FMath::Lerp(MinScale, 1.f, FMath::Clamp(Damage / Settings.DamageLight, 0.f, 1.f));
+		AngleDeg *= Scale;
+		Duration *= Scale;
+	}
 	const float Frequency = FMath::Lerp(Settings.FrequencyLight, Settings.FrequencyStrong, Alpha);
 	if (Duration <= 0.f)
 	{

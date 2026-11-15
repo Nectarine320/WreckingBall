@@ -48,4 +48,15 @@ struct WRECKINGBALL_API FWB_WobbleSettings
 	/** When a new hit interrupts a wobble, time in seconds for the old wobble pose to fade out while the new one starts. 0 snaps the old pose away. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wobble", meta = (ClampMin = "0", Units = "Seconds"))
 	float InterruptFadeTime = 0.1f;
+
+	/**
+	 * If true, hits below DamageLight still wobble, scaled down, including hits refused by the destructible (damage above 0, see StartMinorHitWobbleFromNormal).
+	 * The Light angle and duration are multiplied by MinorHitMinScale at 0 damage, growing linearly to x1 at DamageLight (fewer oscillations for smaller hits). Off by default.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wobble|Minor Hits")
+	bool bWobbleOnMinorHits = false;
+
+	/** Minor hits only: scale (0..1) of the Light angle and duration for a hit with almost no damage. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Wobble|Minor Hits", meta = (ClampMin = "0", ClampMax = "1", EditCondition = "bWobbleOnMinorHits"))
+	float MinorHitMinScale = 0.3f;
 };

@@ -36,6 +36,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Destructible|Wall", meta = (DefaultToSelf = "Wall"))
 	static int32 GetSideFromNormal(const AActor* Wall, FVector Normal, float MinSideDot = 0.5f);
 
+	/**
+	 * Returns Normal, flipped if needed so that it points from the hit surface toward Source (outward, toward the attacker).
+	 * Physics hit events (OnComponentHit) can report the contact normal in either direction, depending on the order of the two bodies;
+	 * sweep hits (Dash scan) already point outward. Use it before building impact data from a physics hit.
+	 * Source empty: Normal is returned unchanged.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Destructible|Impact")
+	static FVector OrientNormalTowardSource(FVector Normal, FVector ImpactPoint, const AActor* Source);
+
 	/** Applies Materials to Mesh: entry i goes to material slot i; an empty entry keeps the slot's current material. Extra entries are ignored. */
 	UFUNCTION(BlueprintCallable, Category = "Destructible|Materials")
 	static void ApplyMaterialOverrides(UMeshComponent* Mesh, const TArray<UMaterialInterface*>& Materials);

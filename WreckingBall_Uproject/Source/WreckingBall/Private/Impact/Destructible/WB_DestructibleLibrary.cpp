@@ -67,6 +67,16 @@ int32 UWB_DestructibleLibrary::GetSideFromNormal(const AActor* Wall, FVector Nor
 	return 0;
 }
 
+FVector UWB_DestructibleLibrary::OrientNormalTowardSource(FVector Normal, FVector ImpactPoint, const AActor* Source)
+{
+	if (!IsValid(Source))
+	{
+		return Normal;
+	}
+	const FVector ToSource = Source->GetActorLocation() - ImpactPoint;
+	return FVector::DotProduct(Normal, ToSource) < 0.f ? -Normal : Normal;
+}
+
 void UWB_DestructibleLibrary::ApplyMaterialOverrides(UMeshComponent* Mesh, const TArray<UMaterialInterface*>& Materials)
 {
 	if (!IsValid(Mesh))
