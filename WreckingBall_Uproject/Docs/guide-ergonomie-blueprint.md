@@ -1,4 +1,6 @@
-<!-- COPIE EN LECTURE SEULE. Original : claude/guide-ergonomie-blueprint.md dans le projet claude.ai « Wrecking Ball - Alagaesia ». Copiée le 2026-11-13. Ne pas modifier ici : le guide se met à jour uniquement dans la conversation dédiée, puis on recopie le fichier. -->
+<!-- COPIE EN LECTURE SEULE. Original : claude/guide-ergonomie-blueprint.md dans le projet claude.ai « Wrecking Ball - Alagaesia ». Copiée le 2026-11-13. Ne pas modifier ici : le guide se met à jour uniquement dans la conversation dédiée, puis on recopie le fichier.
+     EXCEPTION 2026-11-15 : mise à jour faite ici à la demande de l'utilisateur (leçons du lot 9.5 : §5, §7, §8.6, §8.7). Cette version est la plus récente : à recopier dans le projet claude.ai. -->
+
 
 # Wrecking Ball — Guide d'ergonomie Blueprint (pour Claude)
 
@@ -77,6 +79,8 @@ Pour `Set Timer by Event`, `Bind Event to …`, `Create Event` :
 
 ### Modèle : animation par code (sans Timeline)
 
+Si l'animation sert à plusieurs Blueprints ou tourne en continu dans le gameplay (ex. oscillation d'un destructible), elle va en C++, dans un composant (voir CLAUDE.md, section C++ : `UWB_WobbleComponent` en est l'exemple). Le modèle ci-dessous reste pour une animation propre à un seul Blueprint (UI, feedback ponctuel).
+
 Pour une animation calculée image par image (secousse, rebond, déplacement de lettres…) :
 1. **`Play…Anim`** (ex. `PlayShakeAnim`) initialise l'état, puis lance un `Set Timer by Event` à **0,016 s, en boucle** (`Looping` = vrai), et stocke le handle.
 2. L'event **`…Step`** (ex. `ShakeAnimStep`) est branché sur la pin rouge et placé **juste sous le node `Set Timer by Event`**, pour garder le fil rouge court. Il avance le temps écoulé, applique la valeur, et arrête le timer (`Clear and Invalidate Timer by Handle`) quand l'animation est finie.
@@ -112,7 +116,7 @@ Légende du projet (couleurs mesurées dans les BP de référence, avec Alpha 0.
 2. **Une Description dès que l'effet n'est pas évident.** Si le nom seul ne dit pas *à quoi sert* la variable, ni *dans quelle unité* elle est, ni *quand elle change*, elle reçoit une Description (tooltip). Elle répond en une ou deux phrases à : qu'est-ce que ça contrôle, unité ou plage, qui la modifie.
    - Pas besoin de description : `Dashing` (bool), `WalkType`.
    - Description obligatoire : `DashScanDistance` (« Distance in cm in front of the player where the Dash looks for destructibles. »), `SprintTerminationLerp`, `KickStrenghtPercentDefault`, tout handle de timer (« Handle of the timer that refreshes the sprint bar; paused when the bar is full. »).
-3. **Widget déjà placé ailleurs.** Quand j'ajoute une variable à un widget qui est déjà placé dans d'autres WBP, les instances placées gardent 0 ou vide au lieu de la valeur par défaut (vu avec la secousse et les textes des slots). Je remets donc la variable aux valeurs par défaut sur **chaque instance placée** (`reset_properties`), puis je compile et sauvegarde les WBP concernés.
+3. **Acteur ou widget déjà placé.** Quand j'ajoute une variable ou un composant à un Blueprint dont des instances sont déjà placées, ces instances peuvent garder 0 ou vide au lieu de la valeur par défaut (vu avec la secousse et les textes des slots des widgets, puis avec les pivots du composant `Wobble` sur les 14 murs du gym). Je vérifie les instances après coup et je remets la valeur par défaut sur **chaque instance placée** (`reset_properties`), puis je compile et sauvegarde les Blueprints ou le niveau concernés. Attention : `reset_properties` ramène au défaut **C++** d'une propriété C++, pas au défaut du Blueprint. Dans ce cas, j'écris la valeur sur chaque instance avec `set_properties`.
 
 ### Fonctions
 - Une fonction est documentée par son champ **Description**, pas par un Comment. La Description dit ce que fait la fonction, ses entrées et sorties si elles ne sont pas évidentes, et quand l'appeler.
@@ -162,11 +166,17 @@ Légende du projet (couleurs mesurées dans les BP de référence, avec Alpha 0.
    - chaque nouvelle variable a une Category (`get_variable_category` ne renvoie pas une chaîne vide).
 6. **Limites connues de l'outillage :**
    - un Custom Event **ne se renomme pas** par outil : il faut le renommer à la main (F2). Je choisis donc le bon nom dès la création, et je liste dans le rapport ceux qui seraient à renommer ;
-   - l'**appel au parent** dans un event surchargé (fonction parente sans sortie) ne peut pas être créé par outil. **On évite ces surcharges.** Si une surcharge est indispensable, on passe par une fonction avec une sortie (l'appel au parent est alors créé automatiquement), ou je te demande d'ajouter l'appel à la main.
+   - l'**appel au parent** dans un event surchargé (fonction parente sans sortie) ne peut pas être créé par outil. **On évite ces surcharges.** Si une surcharge est indispensable, on passe par une fonction avec une sortie (l'appel au parent est alors créé automatiquement), ou je te demande d'ajouter l'appel à la main ;
+   - `write_graph_dsl` sur un graph qui contient un appel au parent (`Parent: …`, ex. Construction Script) le supprime, et l'outil ne sait pas le recréer. Je modifie ces graphs node par node ;
+   - une fonction ou un Custom Event avec un paramètre de type struct Blueprint (ex. `STR_ImpactData`) ou objet, ou une sortie de type objet, ne se crée pas par outil (`add_function_param` n'accepte que les types simples, `Vector`, `Rotator`, `Transform`, `Vector2D` et `LinearColor`). Je passe par ces types simples, ou par du C++ ;
+   - un node `Return` ne se crée pas par outil. Je ne supprime **jamais** le `Return` d'une fonction qui a des sorties : ça supprime aussi ses sorties. Pour un nouveau chemin de sortie, je réutilise un `Return` existant (une entrée exec accepte plusieurs fils) ;
+   - les events de composant (`OnComponentHit`…) se créent avec `add_component_bound_event`, pas avec le DSL ;
+   - ajouter une interface à un Blueprint (Class Settings) se fait à la main ;
+   - dans le DSL, le getter d'un composant s'écrit sans underscore : `Variables|Default|GetSMMiddleMesh` pour `SM_MiddleMesh`.
 7. **Rapport final** (format validé le 2026-11-13) :
    - **Message concis** : dire ce qui a changé, avec une ligne sur pourquoi ou à quoi ça sert. Les explications détaillées seulement si tu les demandes.
    - **Blocs à encadrer** : couleur **par son nom** + titre (pas pour les Blueprints de test temporaires, section 6).
-   - **Descriptions à coller**, si je n'ai pas pu les écrire :
+   - **Descriptions à coller**, si je n'ai pas pu les écrire. Seulement pour les variables et fonctions **Blueprint** : les `UPROPERTY` et `UFUNCTION` C++ prennent leur infobulle du commentaire `/** */`, rien à coller.
      - une section par Blueprint, avec le nom du Blueprint en titre, dans une boîte de code ;
      - puis un tableau à trois colonnes : **Variable / fonction** (nom en boîte de code, avec « (fonction) » ou « (fonction, surcharge) » si besoin) | **Effet** (court, en français) | **Description** (en anglais, dans une boîte de code) ;
      - tu copies la Description par un triple-clic sur la boîte.
@@ -193,7 +203,8 @@ Légende du projet (couleurs mesurées dans les BP de référence, avec Alpha 0.
 - [ ] Animation par code : `Play…Anim` → timer 0,016 s en boucle → `…Step` juste dessous → maths dans une fonction
 - [ ] BeginPlay court, la logique est dans des fonctions
 - [ ] Chaque variable dans une Category, avec une Description en anglais si son effet n'est pas évident
-- [ ] Nouvelle variable sur un widget déjà placé : `reset_properties` sur les instances
+- [ ] Nouvelle variable ou composant sur un acteur ou widget déjà placé : valeurs vérifiées sur les instances (`set_properties` si propriété C++)
+- [ ] Graph avec un appel au parent : modifié node par node, jamais réécrit au DSL ; `Return` d'une fonction à sorties jamais supprimé
 - [ ] Chaque fonction a une Description en anglais (pas de Comment)
 - [ ] Custom Events self-explanatory ; `Anim` dans le nom si Timeline ou animation
 - [ ] Composant de base : nouvelle option désactivée par défaut
@@ -201,4 +212,4 @@ Légende du projet (couleurs mesurées dans les BP de référence, avec Alpha 0.
 - [ ] Rapport concis ; Comments à poser (couleur par son nom + titre) ; Descriptions en tableau par Blueprint (Variable / fonction | Effet | Description en boîte de code)
 
 ---
-*Créé le 2026-11-01 à partir de l'analyse des positions de nodes de `BP_GenericCharacter`, `BP_SoccerPlayer`, `BP_MenuCinematicManager` et `BP_MenuCinematicTransition`. Section 7 ajoutée le 2026-11-01. Mise à jour du 2026-11-02 : leçons des autres conversations du projet (couleurs par leur nom, Descriptions en anglais, fonctions sans Comment, `reset_properties`, composants universels, animation par code, `self` dupliqué, leçons sur le DSL et limites des outils). Mise à jour du 2026-11-13 : format du rapport final (message concis, Descriptions en tableau par Blueprint) et pas de Comments sur les Blueprints de test temporaires. À mettre à jour uniquement dans la conversation dédiée à l'édition du guide.*
+*Créé le 2026-11-01 à partir de l'analyse des positions de nodes de `BP_GenericCharacter`, `BP_SoccerPlayer`, `BP_MenuCinematicManager` et `BP_MenuCinematicTransition`. Section 7 ajoutée le 2026-11-01. Mise à jour du 2026-11-02 : leçons des autres conversations du projet (couleurs par leur nom, Descriptions en anglais, fonctions sans Comment, `reset_properties`, composants universels, animation par code, `self` dupliqué, leçons sur le DSL et limites des outils). Mise à jour du 2026-11-13 : format du rapport final (message concis, Descriptions en tableau par Blueprint) et pas de Comments sur les Blueprints de test temporaires. Mise à jour du 2026-11-15 (lot 9.5, faite dans le dépôt à la demande de l'utilisateur) : animation partagée en C++, instances déjà placées et `reset_properties`, nouvelles limites MCP, Descriptions C++. À mettre à jour uniquement dans la conversation dédiée à l'édition du guide.*
