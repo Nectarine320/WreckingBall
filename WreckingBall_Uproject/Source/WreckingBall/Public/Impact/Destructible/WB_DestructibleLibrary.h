@@ -2,11 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "Chaos/ChaosEngineInterface.h"
 #include "WB_DestructibleLibrary.generated.h"
 
 class UGeometryCollectionComponent;
 class UMaterialInterface;
 class UMeshComponent;
+class UPhysicalMaterial;
 
 /**
  * Helpers shared by all destructibles (BP_Destructible_Base and its children).
@@ -44,6 +46,14 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Destructible|Impact")
 	static FVector OrientNormalTowardSource(FVector Normal, FVector ImpactPoint, const AActor* Source);
+
+	/**
+	 * Returns the surface type of the wall side a hit lands on, for impact feedback: SideA's surface for side A (actor +Y), SideB's for side B (actor -Y).
+	 * Normal is the world-space impact normal, pointing toward the attacker (same side rule as GetSideFromNormal, MinSideDot 0.5).
+	 * Returns Fallback for an edge hit or when the hit side has no physical material.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Destructible|Wall", meta = (DefaultToSelf = "Wall"))
+	static TEnumAsByte<EPhysicalSurface> GetWallSideSurface(const AActor* Wall, FVector Normal, const UPhysicalMaterial* SideA, const UPhysicalMaterial* SideB, TEnumAsByte<EPhysicalSurface> Fallback);
 
 	/** Applies Materials to Mesh: entry i goes to material slot i; an empty entry keeps the slot's current material. Extra entries are ignored. */
 	UFUNCTION(BlueprintCallable, Category = "Destructible|Materials")

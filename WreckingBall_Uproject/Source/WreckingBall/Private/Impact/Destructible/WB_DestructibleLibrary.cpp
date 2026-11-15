@@ -8,6 +8,7 @@
 #include "Impact/Budget/WB_PhysicsBudgetManager_Base.h"
 #include "Impact/Destructible/WB_DestructibleDependent.h"
 #include "Materials/MaterialInterface.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "TimerManager.h"
 
 bool UWB_DestructibleLibrary::CollapseGeometryCollection(UGeometryCollectionComponent* Collection, FVector ImpulseOrigin, float ImpulseRadius, float ImpulseStrength, float DebrisLifetime)
@@ -65,6 +66,13 @@ int32 UWB_DestructibleLibrary::GetSideFromNormal(const AActor* Wall, FVector Nor
 		return -1;
 	}
 	return 0;
+}
+
+TEnumAsByte<EPhysicalSurface> UWB_DestructibleLibrary::GetWallSideSurface(const AActor* Wall, FVector Normal, const UPhysicalMaterial* SideA, const UPhysicalMaterial* SideB, TEnumAsByte<EPhysicalSurface> Fallback)
+{
+	const int32 Side = GetSideFromNormal(Wall, Normal, 0.5f);
+	const UPhysicalMaterial* SideMaterial = Side > 0 ? SideA : (Side < 0 ? SideB : nullptr);
+	return SideMaterial ? SideMaterial->SurfaceType : Fallback;
 }
 
 FVector UWB_DestructibleLibrary::OrientNormalTowardSource(FVector Normal, FVector ImpactPoint, const AActor* Source)

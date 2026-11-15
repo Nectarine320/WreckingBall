@@ -13,6 +13,9 @@ public class WreckingBall : ModuleRules
 		// Lot 9: per-piece Geometry Collection debris (component, removal facades, physics proxy).
 		PrivateDependencyModuleNames.AddRange(new string[] { "GeometryCollectionEngine", "Chaos" });
 
+		// Lot 10: physical materials and surface types for impact feedback.
+		PrivateDependencyModuleNames.Add("PhysicsCore");
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
