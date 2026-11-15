@@ -1,9 +1,53 @@
 #include "Impact/Destructible/WB_DestructibleLibrary.h"
 
 #include "Components/MeshComponent.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/Actor.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
+#include "Impact/Budget/WB_PhysicsBudgetManager_Base.h"
 #include "Impact/Destructible/WB_DestructibleDependent.h"
 #include "Materials/MaterialInterface.h"
+#include "TimerManager.h"
+
+bool UWB_DestructibleLibrary::CollapseGeometryCollection(UGeometryCollectionComponent* Collection, FVector ImpulseOrigin, float ImpulseRadius, float ImpulseStrength, float DebrisLifetime)
+{
+	if (!IsValid(Collection))
+	{
+		return false;
+	}
+	UWorld* World = Collection->GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	Collection->SetSimulatePhysics(true);
+	Collection->CrumbleActiveClusters();
+	Collection->AddRadialImpulse(ImpulseOrigin, ImpulseRadius, ImpulseStrength, ERadialImpulseFalloff::RIF_Constant, true);
+
+	for (TActorIterator<AWB_PhysicsBudgetManager_Base> It(World); It; ++It)
+	{
+		if (IsValid(*It))
+		{
+			It->RegisterGeometryCollection(Collection);
+			return true;
+		}
+	}
+
+	// No budget manager in the level: hide the debris after its lifetime.
+	if (DebrisLifetime > 0.f)
+	{
+		FTimerHandle Handle;
+		World->GetTimerManager().SetTimer(Handle, FTimerDelegate::CreateWeakLambda(Collection, [Collection]()
+		{
+			Collection->SetVisibility(false);
+			Collection->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Collection->SetSimulatePhysics(false);
+		}), DebrisLifetime, false);
+	}
+	return false;
+}
 
 int32 UWB_DestructibleLibrary::GetSideFromNormal(const AActor* Wall, FVector Normal, float MinSideDot)
 {

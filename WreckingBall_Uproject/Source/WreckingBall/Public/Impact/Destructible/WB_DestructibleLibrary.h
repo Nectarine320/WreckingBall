@@ -4,6 +4,7 @@
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "WB_DestructibleLibrary.generated.h"
 
+class UGeometryCollectionComponent;
 class UMaterialInterface;
 class UMeshComponent;
 
@@ -38,4 +39,12 @@ public:
 	/** Applies Materials to Mesh: entry i goes to material slot i; an empty entry keeps the slot's current material. Extra entries are ignored. */
 	UFUNCTION(BlueprintCallable, Category = "Destructible|Materials")
 	static void ApplyMaterialOverrides(UMeshComponent* Mesh, const TArray<UMaterialInterface*>& Materials);
+
+	/**
+	 * Collapses a Geometry Collection: simulate, crumble the clusters, radial impulse from ImpulseOrigin (cm, constant falloff, velocity change).
+	 * The debris then goes to the physics budget manager of the level when there is one; otherwise it is hidden and disabled after DebrisLifetime seconds (0 = never).
+	 * Returns true when the debris was registered with a budget manager.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Destructible|Collapse")
+	static bool CollapseGeometryCollection(UGeometryCollectionComponent* Collection, FVector ImpulseOrigin, float ImpulseRadius = 600.f, float ImpulseStrength = 200.f, float DebrisLifetime = 10.f);
 };
