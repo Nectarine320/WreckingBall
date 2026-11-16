@@ -1,0 +1,121 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "Engine/HitResult.h"
+#include "GameplayTagContainer.h"
+#include "WB_PlayerHitComponent.generated.h"
+
+class UMaterialInterface;
+class UPrimitiveComponent;
+class UWB_PlayerHitProfile;
+class UWB_PlayerStateComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FWB_OnHitReceived, AActor*, Source, FGameplayTag, NewState, FVector, Direction);
+
+/**
+ * Makes a player react to hits (Phase C, step 10): a thrown object above the speed threshold stuns, a Dash knocks Down.
+ * Added to BP_GenericCharacter next to UWB_PlayerStateComponent, which it drives. The Blueprint detects the hit
+ * (capsule Hit for thrown objects, Dash sweep for dashes) and calls ReceiveThrownHit or ReceiveDashHit.
+ * At BeginPlay, turns on the physics hit events of the owner's root (capsule).
+ */
+UCLASS(Blueprintable, ClassGroup = (WreckingBall), meta = (BlueprintSpawnableComponent))
+class WRECKINGBALL_API UWB_PlayerHitComponent : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	UWB_PlayerHitComponent();
+
+	/** Hit rules and durations (DA_PlayerHit_Default). Empty: the class defaults of UWB_PlayerHitProfile are used. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit")
+	TObjectPtr<UWB_PlayerHitProfile> HitProfile;
+
+	/** Team of the player, set by BP_SoccerGamemode when the player is registered. -1: no team, every hit counts as an enemy hit. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Category = "PlayerHit")
+	int32 TeamIndex = -1;
+
+	/** Called after a hit was accepted: NewState is Player.State.Stunned or Player.State.Down, Direction is the flat push direction. Hook for the drop (ForceDrop) and the feedback. */
+	UPROPERTY(BlueprintAssignable, Category = "PlayerHit")
+	FWB_OnHitReceived OnHitReceived;
+
+	/**
+	 * A thrown object (or the ball) hit the player at ImpactVelocity. Stuns the player when the speed reaches StunMinImpactSpeed
+	 * and the hit is allowed (not its own object, friendly fire, cooldown, grace, ball rule, state table). Returns true when stunned.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerHit", meta = (ReturnDisplayName = "Stunned"))
+	bool ReceiveThrownHit(AActor* Source, FVector ImpactVelocity, bool bSourceIsBall);
+
+	/**
+	 * A dashing player hit this player (Direction: the Dash direction). When the hit is allowed (friendly fire, cooldown, grace, state table):
+	 * enters Down, faces and bumps the player sideways (perpendicular to the Dash, airborne), then starts the DownDuration timer on landing.
+	 * The minimum run-up is checked by the dasher before the call. Returns true when knocked Down.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerHit", meta = (ReturnDisplayName = "KnockedDown"))
+	bool ReceiveDashHit(AActor* Dasher, FVector Direction);
+
+	/**
+	 * Speed of a simulated object just before it hit (the Hit event gives the velocity after the bounce).
+	 * Same method as the destructibles: velocity plus or minus NormalImpulse / mass, the larger one is kept. Not simulated: its current velocity.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PlayerHit")
+	static FVector EstimatePreImpactVelocity(UPrimitiveComponent* OtherComp, FVector NormalImpulse);
+
+	/** True during PostDownGraceSeconds after the player got up: no stun, no Down. The mesh blinks white meanwhile (GraceBlinkMaterial). */
+	UFUNCTION(BlueprintPure, Category = "PlayerHit")
+	bool IsInPostDownGrace() const;
+
+	/** The profile in use: HitProfile, or the UWB_PlayerHitProfile class defaults when it is empty. Never null. */
+	UFUNCTION(BlueprintPure, Category = "PlayerHit")
+	const UWB_PlayerHitProfile* GetActiveHitProfile() const;
+
+protected:
+	virtual void BeginPlay() override;
+
+private:
+	/** State component of the owner, found at BeginPlay. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWB_PlayerStateComponent> PlayerState;
+
+	/** Game time of the last accepted hit per source, for HitCooldown. */
+	TMap<TWeakObjectPtr<AActor>, double> LastHitTimes;
+
+	/** Game time until which the player cannot be hit (post-Down grace). */
+	double GraceEndTime = -1.0;
+
+	/** Common rules of both hit types: valid state component, not self, friendly fire, cooldown, grace. */
+	bool CanBeHitBy(AActor* Source) const;
+
+	/** Records Source for HitCooldown. */
+	void RegisterHit(AActor* Source);
+
+	/** True between a Dash hit and the landing of the bump: the Down timer starts when the player touches the ground. */
+	bool bAwaitingDownLanding = false;
+
+	/** Toggles the grace blink overlay (GraceBlinkInterval). */
+	FTimerHandle GraceBlinkTimer;
+
+	/** Overlay material of the mesh before the blink started, restored at the end. */
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> OverlayBeforeBlink;
+
+	/** True while the flash overlay is shown. */
+	bool bGraceFlashOn = false;
+
+	/** Starts blinking the mesh until GraceEndTime (no material in the profile: nothing). */
+	void StartGraceBlink();
+
+	/** One blink step: toggles the flash, or stops and restores the overlay once the grace is over. */
+	void TickGraceBlink();
+
+	/** Stops the blink and restores the original overlay. */
+	void StopGraceBlink();
+
+	/** Starts the post-Down grace when the player leaves Down. */
+	UFUNCTION()
+	void HandlePlayerStateChanged(FGameplayTag OldState, FGameplayTag NewState);
+
+	/** End of the Dash bump: starts the Down timer (DownDuration) once the player is back on the ground. */
+	UFUNCTION()
+	void HandleLanded(const FHitResult& Hit);
+};

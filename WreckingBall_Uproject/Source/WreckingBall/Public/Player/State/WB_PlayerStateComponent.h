@@ -104,7 +104,8 @@ public:
 	bool CanSprint() const;
 
 	/**
-	 * Scale to apply to the move input: 0 when CanMove is false, from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, 1 otherwise.
+	 * Scale to apply to the move input: 0 when CanMove is false, from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing,
+	 * StunMoveSpeedMultiplier while Stunned, 1 otherwise.
 	 * Scaling the input (not MaxWalkSpeed) keeps the sprint system untouched.
 	 */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")

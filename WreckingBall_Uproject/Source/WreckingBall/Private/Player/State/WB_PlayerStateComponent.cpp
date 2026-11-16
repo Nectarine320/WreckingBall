@@ -5,6 +5,7 @@
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
+#include "Player/Hit/WB_PlayerHitComponent.h"
 #include "Player/State/WB_PlayerStateProfile.h"
 #include "Player/State/WB_PlayerStateTags.h"
 
@@ -162,6 +163,10 @@ float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
 	{
 		return FMath::Lerp(1.f, GetActiveProfile()->ActionMoveSpeedMultiplier, ActionCharge);
 	}
+	if (CurrentState == WBTags::Player_State_Stunned)
+	{
+		return GetActiveProfile()->StunMoveSpeedMultiplier;
+	}
 	return 1.f;
 }
 
@@ -263,9 +268,17 @@ void UWB_PlayerStateComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	const AActor* Owner = GetOwner();
 	if (bDebugShowState && Owner)
 	{
-		const FString Text = FString::Printf(TEXT("%s | %s"), *ShortTagName(CurrentState), *ShortTagName(CurrentHolding));
+		FString Text = FString::Printf(TEXT("%s | %s"), *ShortTagName(CurrentState), *ShortTagName(CurrentHolding));
+		FColor Color = FColor::Yellow;
+		// Invulnerability (Down + post-Down grace) explains the blink: shown in cyan.
+		const UWB_PlayerHitComponent* Hit = Owner->FindComponentByClass<UWB_PlayerHitComponent>();
+		if (Hit && Hit->IsInPostDownGrace())
+		{
+			Text += TEXT(" | Invulnerable");
+			Color = FColor::Cyan;
+		}
 		DrawDebugString(GetWorld(), Owner->GetActorLocation() + FVector(0.f, 0.f, DebugTextHeight), Text,
-			nullptr, FColor::Yellow, 0.f, true, 1.2f);
+			nullptr, Color, 0.f, true, 1.2f);
 	}
 #endif
 }

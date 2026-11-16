@@ -56,4 +56,8 @@ public:
 	/** Move speed multiplier at full kick / throw charge while Kicking or Throwing. The speed goes from 1 (no charge) to this value (full charge). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
 	float ActionMoveSpeedMultiplier = 0.5f;
+
+	/** Move speed multiplier while Stunned (hit by a thrown object, step 10). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
+	float StunMoveSpeedMultiplier = 0.4f;
 };
