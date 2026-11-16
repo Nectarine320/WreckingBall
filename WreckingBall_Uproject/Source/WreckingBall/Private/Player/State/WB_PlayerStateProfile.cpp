@@ -40,6 +40,7 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 	StatesRequiringHolding.AddTag(Player_State_Kicking);
 	StatesRequiringHolding.AddTag(Player_State_Throwing);
 
-	StatesBlockingMovement = MakeContainer({ Player_State_Disabled, Player_State_Down });
+	// Stunned blocks movement too (user decision 2026-11-16): a stunned player sits on the ground.
+	StatesBlockingMovement = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned });
 	StatesBlockingSprint = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned, Player_State_Celebrating });
 }

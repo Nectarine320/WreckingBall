@@ -6,8 +6,23 @@
 #include "GameplayTagContainer.h"
 #include "WB_PlayerHitComponent.generated.h"
 
+class UAnimSequenceBase;
 class UMaterialInterface;
 class UPrimitiveComponent;
+
+/** Where a Stunned or Down player is in its hit reaction. Read by the AnimBP to chain the enter, loop and get-up animations. */
+UENUM(BlueprintType)
+enum class EWB_HitReactPhase : uint8
+{
+	/** Not Stunned nor Down. */
+	None,
+	/** Just hit: falling on the backside (Stunned) or bumped through the air (Down). Lasts the length of the profile's enter animation. */
+	Enter,
+	/** On the ground, waiting for the get-up (stun loop, or lying Down). */
+	Loop,
+	/** Getting up: the last part of the state, as long as the profile's get-up animation. Still Stunned / Down meanwhile. */
+	GetUp
+};
 class UWB_PlayerHitProfile;
 class UWB_PlayerStateComponent;
 
@@ -61,9 +76,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerHit")
 	static FVector EstimatePreImpactVelocity(UPrimitiveComponent* OtherComp, FVector NormalImpulse);
 
-	/** True during PostDownGraceSeconds after the player got up: no stun, no Down. The mesh blinks white meanwhile (GraceBlinkMaterial). */
+	/** True while the player is Down and during PostDownGraceSeconds after getting up: no stun, no Down. The mesh blinks white meanwhile (GraceBlinkMaterial). */
 	UFUNCTION(BlueprintPure, Category = "PlayerHit")
 	bool IsInPostDownGrace() const;
+
+	/** Phase of the current hit reaction (None when not Stunned nor Down). Read every frame by the AnimBP to pick the enter, loop or get-up animation. */
+	UFUNCTION(BlueprintPure, Category = "PlayerHit")
+	EWB_HitReactPhase GetHitReactPhase() const;
+
+	/**
+	 * Velocity change to give to the object the player drops when hit (BPC_GrabObject ForceDrop): DropSpeed along HitDirection (flat),
+	 * turned by a random yaw up to DropRandomYaw, plus DropUpSpeed upward. Zero HitDirection: the player's forward is used.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PlayerHit")
+	FVector MakeDropImpulse(FVector HitDirection) const;
 
 	/** The profile in use: HitProfile, or the UWB_PlayerHitProfile class defaults when it is empty. Never null. */
 	UFUNCTION(BlueprintPure, Category = "PlayerHit")
@@ -91,6 +117,18 @@ private:
 
 	/** True between a Dash hit and the landing of the bump: the Down timer starts when the player touches the ground. */
 	bool bAwaitingDownLanding = false;
+
+	/** Game time of the hit that started the current Stunned / Down (start of the Enter phase). */
+	double HitReactStartTime = -1.0;
+
+	/** Game time when the get-up starts (GetUp phase). -1 while unknown (Down still in the air) or outside a hit reaction. */
+	double GetUpStartTime = -1.0;
+
+	/** Length in seconds of Anim, 0 when empty. */
+	static float GetAnimLength(const UAnimSequenceBase* Anim);
+
+	/** Down on the ground: back to Free after DownDuration plus the get-up length, and sets GetUpStartTime. */
+	void StartDownGroundTimer();
 
 	/** Toggles the grace blink overlay (GraceBlinkInterval). */
 	FTimerHandle GraceBlinkTimer;

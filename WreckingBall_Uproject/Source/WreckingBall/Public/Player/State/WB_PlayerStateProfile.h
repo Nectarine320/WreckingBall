@@ -29,7 +29,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesRequiringHolding;
 
-	/** States where the move and look inputs have no effect. Default: Disabled, Down. */
+	/** States where the move and look inputs have no effect. Default: Disabled, Down, Stunned. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesBlockingMovement;
 
@@ -53,11 +53,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", Units = "DegreesPerSecond"))
 	float CelebrationTurnRate = 270.f;
 
+	/** Run speed at the start of Celebrating, as a multiplier of the player's default walk speed. The speed ramps up to CelebrationEndSpeedMultiplier over CelebrationDuration. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0"))
+	float CelebrationStartSpeedMultiplier = 0.5f;
+
+	/** Run speed at the end of Celebrating, as a multiplier of the player's default walk speed. The ramp accelerates (slow start, fast end). Back to the default walk speed when Celebrating ends. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0"))
+	float CelebrationEndSpeedMultiplier = 2.f;
+
 	/** Move speed multiplier at full kick / throw charge while Kicking or Throwing. The speed goes from 1 (no charge) to this value (full charge). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
 	float ActionMoveSpeedMultiplier = 0.5f;
-
-	/** Move speed multiplier while Stunned (hit by a thrown object, step 10). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
-	float StunMoveSpeedMultiplier = 0.4f;
 };

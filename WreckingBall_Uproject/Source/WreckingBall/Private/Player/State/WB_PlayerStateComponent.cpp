@@ -3,6 +3,8 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
 #include "Player/Hit/WB_PlayerHitComponent.h"
@@ -38,7 +40,33 @@ UWB_PlayerStateComponent::UWB_PlayerStateComponent()
 void UWB_PlayerStateComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Default walk speed (set by the construction script): base of the celebration ramp, restored after it.
+	// Ticking before the movement makes the ramped speed apply on the same frame.
+	if (const ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+		{
+			DefaultWalkSpeed = Movement->MaxWalkSpeed;
+			Movement->AddTickPrerequisiteComponent(this);
+		}
+	}
 	RefreshTickEnabled();
+}
+
+void UWB_PlayerStateComponent::ApplyWalkSpeedMultiplier(float Multiplier) const
+{
+	if (DefaultWalkSpeed <= 0.f)
+	{
+		return;
+	}
+	if (const ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+		{
+			Movement->MaxWalkSpeed = DefaultWalkSpeed * Multiplier;
+		}
+	}
 }
 
 const UWB_PlayerStateProfile* UWB_PlayerStateComponent::GetActiveProfile() const
@@ -93,6 +121,16 @@ bool UWB_PlayerStateComponent::ChangePlayerState(FGameplayTag NewState)
 		ActionCharge = 0.f;
 	}
 	CelebrationSteering = FVector::ZeroVector;
+	if (NewState == WBTags::Player_State_Celebrating)
+	{
+		const UWorld* CurrentWorld = GetWorld();
+		CelebrationStartTime = CurrentWorld ? CurrentWorld->GetTimeSeconds() : 0.0;
+		ApplyWalkSpeedMultiplier(GetActiveProfile()->CelebrationStartSpeedMultiplier);
+	}
+	else if (OldState == WBTags::Player_State_Celebrating)
+	{
+		ApplyWalkSpeedMultiplier(1.f); // Back to the default walk speed.
+	}
 	RefreshTickEnabled();
 	OnPlayerStateChanged.Broadcast(OldState, NewState);
 	return true;
@@ -161,11 +199,14 @@ float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
 	}
 	if (IsInChargedAction())
 	{
+		// Full kick charge: no more forward motion, but the player can still turn (user request 2026-11-16).
+		// A tiny scale keeps the input direction, so bOrientRotationToMovement turns the player toward the stick
+		// while the speed stays below 1 cm/s. A strict 0 would also stop the rotation.
+		if (CurrentState == WBTags::Player_State_Kicking && ActionCharge >= 1.f)
+		{
+			return 0.001f;
+		}
 		return FMath::Lerp(1.f, GetActiveProfile()->ActionMoveSpeedMultiplier, ActionCharge);
-	}
-	if (CurrentState == WBTags::Player_State_Stunned)
-	{
-		return GetActiveProfile()->StunMoveSpeedMultiplier;
 	}
 	return 1.f;
 }
@@ -195,6 +236,25 @@ void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
 	{
 		return;
 	}
+
+	// Speed curve (user request 2026-11-16): explosive rise from the start to the peak at mid-celebration (ease-out cubic),
+	// then a gradual fade back to the default walk speed at the end (smoothstep), so the end of the state has no speed jump.
+	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	const UWorld* World = GetWorld();
+	const float Elapsed = World ? static_cast<float>(World->GetTimeSeconds() - CelebrationStartTime) : 0.f;
+	const float Alpha = Profile->CelebrationDuration > 0.f ? FMath::Clamp(Elapsed / Profile->CelebrationDuration, 0.f, 1.f) : 1.f;
+	float SpeedMultiplier;
+	if (Alpha <= 0.5f)
+	{
+		const float Rise = Alpha / 0.5f;
+		SpeedMultiplier = FMath::Lerp(Profile->CelebrationStartSpeedMultiplier, Profile->CelebrationEndSpeedMultiplier, 1.f - FMath::Pow(1.f - Rise, 3.f));
+	}
+	else
+	{
+		const float Fade = (Alpha - 0.5f) / 0.5f;
+		SpeedMultiplier = FMath::Lerp(Profile->CelebrationEndSpeedMultiplier, 1.f, FMath::SmoothStep(0.f, 1.f, Fade));
+	}
+	ApplyWalkSpeedMultiplier(SpeedMultiplier);
 
 	FVector RunDirection = Pawn->GetActorForwardVector().GetSafeNormal2D();
 	if (!CelebrationSteering.IsNearlyZero())

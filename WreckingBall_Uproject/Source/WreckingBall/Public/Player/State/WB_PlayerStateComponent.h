@@ -104,8 +104,8 @@ public:
 	bool CanSprint() const;
 
 	/**
-	 * Scale to apply to the move input: 0 when CanMove is false, from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing,
-	 * StunMoveSpeedMultiplier while Stunned, 1 otherwise.
+	 * Scale to apply to the move input: 0 when CanMove is false (Disabled, Down, Stunned by default),
+	 * from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, 1 otherwise.
 	 * Scaling the input (not MaxWalkSpeed) keeps the sprint system untouched.
 	 */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
@@ -153,6 +153,15 @@ private:
 
 	/** Last stick direction received while Celebrating (flat, normalized, or zero). */
 	FVector CelebrationSteering = FVector::ZeroVector;
+
+	/** Walk speed of the owner's movement at BeginPlay (WalkSpeedDefault, set by the construction script). Base of the celebration ramp and value restored after it. 0: no character movement. */
+	float DefaultWalkSpeed = 0.f;
+
+	/** Game time when Celebrating started, for the speed ramp. */
+	double CelebrationStartTime = 0.0;
+
+	/** Sets the owner's MaxWalkSpeed to DefaultWalkSpeed x Multiplier (no effect without character movement). */
+	void ApplyWalkSpeedMultiplier(float Multiplier) const;
 
 	/** True when CurrentState is Kicking or Throwing. */
 	bool IsInChargedAction() const;

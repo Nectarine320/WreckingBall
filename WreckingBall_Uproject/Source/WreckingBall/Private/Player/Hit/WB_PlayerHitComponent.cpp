@@ -1,5 +1,6 @@
 #include "Player/Hit/WB_PlayerHitComponent.h"
 
+#include "Animation/AnimSequenceBase.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
@@ -125,9 +126,15 @@ bool UWB_PlayerHitComponent::ReceiveThrownHit(AActor* Source, FVector ImpactVelo
 	{
 		return false;
 	}
-	if (!PlayerState->ChangePlayerStateForDuration(WBTags::Player_State_Stunned, Profile->StunDuration))
+	// The get-up plays at the end of the state: the player stays Stunned (cannot move) until it is over.
+	if (!PlayerState->ChangePlayerStateForDuration(WBTags::Player_State_Stunned, Profile->StunDuration + GetAnimLength(Profile->StunGetUpAnim)))
 	{
 		return false;
+	}
+	if (const UWorld* World = GetWorld())
+	{
+		HitReactStartTime = World->GetTimeSeconds();
+		GetUpStartTime = HitReactStartTime + Profile->StunDuration;
 	}
 
 	RegisterHit(Source);
@@ -150,6 +157,11 @@ bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 	}
 
 	RegisterHit(Dasher);
+	if (const UWorld* World = GetWorld())
+	{
+		HitReactStartTime = World->GetTimeSeconds();
+	}
+	GetUpStartTime = -1.0; // Known on landing.
 
 	// Sideways bump: perpendicular to the Dash, toward the side of the Dash line where this player stands.
 	// The dasher runs through (BP_GenericCharacter ignores the victim), so a push along the Dash would put the victim back in its way.
@@ -179,7 +191,7 @@ bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 	}
 	else
 	{
-		PlayerState->ReturnToFreeAfter(Profile->DownDuration);
+		StartDownGroundTimer();
 	}
 	UE_LOG(LogWBPlayerHit, Verbose, TEXT("%s knocked down by %s."), *GetNameSafe(GetOwner()), *GetNameSafe(Dasher));
 	OnHitReceived.Broadcast(Dasher, WBTags::Player_State_Down, PushDirection);
@@ -209,6 +221,12 @@ void UWB_PlayerHitComponent::HandlePlayerStateChanged(FGameplayTag OldState, FGa
 	{
 		// Invulnerable (and blinking) from the knock down.
 		StartGraceBlink();
+	}
+	if (OldState == WBTags::Player_State_Down || OldState == WBTags::Player_State_Stunned)
+	{
+		// The hit reaction is over (or replaced: Stunned -> Down sets new times right after this call).
+		HitReactStartTime = -1.0;
+		GetUpStartTime = -1.0;
 	}
 	if (OldState == WBTags::Player_State_Down)
 	{
@@ -280,6 +298,60 @@ void UWB_PlayerHitComponent::HandleLanded(const FHitResult& Hit)
 	// Only if still Down (a GameMode change, e.g. Disabled, cancels the landing timer).
 	if (PlayerState && PlayerState->IsInState(WBTags::Player_State_Down))
 	{
-		PlayerState->ReturnToFreeAfter(GetActiveHitProfile()->DownDuration);
+		StartDownGroundTimer();
 	}
+}
+
+void UWB_PlayerHitComponent::StartDownGroundTimer()
+{
+	// On the ground: lie for DownDuration, then get up (the get-up length is still Down: invulnerable, cannot move).
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	PlayerState->ReturnToFreeAfter(Profile->DownDuration + GetAnimLength(Profile->DownGetUpAnim));
+	if (const UWorld* World = GetWorld())
+	{
+		GetUpStartTime = World->GetTimeSeconds() + Profile->DownDuration;
+	}
+}
+
+float UWB_PlayerHitComponent::GetAnimLength(const UAnimSequenceBase* Anim)
+{
+	return Anim ? Anim->GetPlayLength() : 0.f;
+}
+
+EWB_HitReactPhase UWB_PlayerHitComponent::GetHitReactPhase() const
+{
+	if (!PlayerState)
+	{
+		return EWB_HitReactPhase::None;
+	}
+	const bool bDown = PlayerState->IsInState(WBTags::Player_State_Down);
+	if (!bDown && !PlayerState->IsInState(WBTags::Player_State_Stunned))
+	{
+		return EWB_HitReactPhase::None;
+	}
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	if (GetUpStartTime >= 0.0 && Now >= GetUpStartTime)
+	{
+		return EWB_HitReactPhase::GetUp;
+	}
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	const float EnterLength = GetAnimLength(bDown ? Profile->DownEnterAnim : Profile->StunEnterAnim);
+	if (Now - HitReactStartTime < EnterLength || (bDown && bAwaitingDownLanding))
+	{
+		return EWB_HitReactPhase::Enter;
+	}
+	return EWB_HitReactPhase::Loop;
+}
+
+FVector UWB_PlayerHitComponent::MakeDropImpulse(FVector HitDirection) const
+{
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	FVector Direction = HitDirection.GetSafeNormal2D();
+	if (Direction.IsNearlyZero() && GetOwner())
+	{
+		Direction = GetOwner()->GetActorForwardVector().GetSafeNormal2D();
+	}
+	Direction = Direction.RotateAngleAxis(FMath::FRandRange(-Profile->DropRandomYaw, Profile->DropRandomYaw), FVector::UpVector);
+	return Direction * Profile->DropSpeed + FVector::UpVector * Profile->DropUpSpeed;
 }

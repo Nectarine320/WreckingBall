@@ -4,11 +4,12 @@
 #include "Engine/DataAsset.h"
 #include "WB_PlayerHitProfile.generated.h"
 
+class UAnimSequenceBase;
 class UMaterialInterface;
 
 /**
- * How a player reacts to hits (Phase C, step 10): stun threshold, durations, knockback, grace and friendly fire.
- * Used by UWB_PlayerHitComponent (DA_PlayerHit_Default). The stun slowdown lives in UWB_PlayerStateProfile (StunMoveSpeedMultiplier).
+ * How a player reacts to hits (Phase C, step 10): stun threshold, durations, knockback, grace, friendly fire, drop and hit-react animations.
+ * Used by UWB_PlayerHitComponent (DA_PlayerHit_Default). A Stunned player cannot move (UWB_PlayerStateProfile::StatesBlockingMovement).
  */
 UCLASS(BlueprintType)
 class WRECKINGBALL_API UWB_PlayerHitProfile : public UPrimaryDataAsset
@@ -20,7 +21,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Stun", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
 	float StunMinImpactSpeed = 600.f;
 
-	/** Seconds the player stays Stunned before going back to Free. */
+	/** Seconds from the hit to the start of the get-up (enter + loop). The player is back to Free after this plus the length of StunGetUpAnim. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Stun", meta = (ClampMin = "0", Units = "Seconds"))
 	float StunDuration = 1.f;
 
@@ -28,7 +29,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Stun")
 	bool bBallCanStun = false;
 
-	/** Seconds the player stays Down on the ground after landing from the Dash bump, before getting up (back to Free). The bump itself (airborne) is not counted. */
+	/** Seconds the player lies on the ground after landing from the Dash bump, before the get-up starts. Back to Free after this plus the length of DownGetUpAnim. The bump itself (airborne) is not counted. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", Units = "Seconds"))
 	float DownDuration = 1.5f;
 
@@ -59,4 +60,32 @@ public:
 	/** True (default): a teammate's thrown object or Dash can stun or knock Down the player. False: hits from the same team are ignored. A player is never hit by their own thrown object. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Rules")
 	bool bFriendlyFire = true;
+
+	/** Horizontal speed in cm/s given to the held object (or ball) dropped when the player is stunned or knocked Down, along the hit direction. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Drop", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
+	float DropSpeed = 250.f;
+
+	/** Upward speed in cm/s added to the dropped object, so it pops up a little instead of sliding. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Drop", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
+	float DropUpSpeed = 200.f;
+
+	/** Random yaw in degrees (plus or minus) applied to the drop direction, so drops do not all go the same way. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Drop", meta = (ClampMin = "0", ClampMax = "180", Units = "Degrees"))
+	float DropRandomYaw = 45.f;
+
+	/** Played when the player becomes Stunned (AS_Stunned_Enter). Only its length is read here: the Enter phase lasts this long. Empty: no Enter phase. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Animation")
+	TObjectPtr<UAnimSequenceBase> StunEnterAnim;
+
+	/** Get-up at the end of Stunned (AS_Stunned_GetUp). Its length is added to StunDuration; the player stays Stunned (cannot move) while it plays. Empty: no get-up time. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Animation")
+	TObjectPtr<UAnimSequenceBase> StunGetUpAnim;
+
+	/** Played when the player is knocked Down (AS_Down_Enter). The Enter phase lasts this long, and at least until the bump lands. Empty: Enter until landing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Animation")
+	TObjectPtr<UAnimSequenceBase> DownEnterAnim;
+
+	/** Get-up at the end of Down (AS_Down_GetUp). Its length is added to DownDuration; the player stays Down (invulnerable, cannot move) while it plays. Empty: no get-up time. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Animation")
+	TObjectPtr<UAnimSequenceBase> DownGetUpAnim;
 };
