@@ -9,6 +9,7 @@ class UWB_PlayerStateProfile;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnPlayerStateChanged, FGameplayTag, OldState, FGameplayTag, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnHoldingChanged, FGameplayTag, OldHolding, FGameplayTag, NewHolding);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnActionRefused, FGameplayTag, RequestedState);
 
 /**
  * Single source of truth of what a player does (Player.State.*) and holds (Player.Holding.*), Phase C step 9.
@@ -43,6 +44,14 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "PlayerState")
 	FWB_OnHoldingChanged OnHoldingChanged;
 
+	/** Called when a player request (TryEnterState) is refused, e.g. a Dash while holding something. No listener yet: hook for a future sound or icon. */
+	UPROPERTY(BlueprintAssignable, Category = "PlayerState")
+	FWB_OnActionRefused OnActionRefused;
+
+	/** Kick / throw charge from 0 (just pressed) to 1 (full charge), set by BPC_GrabObject while Kicking or Throwing. Slows the player down (GetMoveSpeedMultiplier). Back to 0 when the state ends. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PlayerState")
+	float ActionCharge = 0.f;
+
 	/** Shows the current state and holding above the player (development builds only). Off by default. Use SetDebugShowState to toggle it during play. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Debug")
 	bool bDebugShowState = false;
@@ -64,6 +73,53 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerState", meta = (ReturnDisplayName = "Changed"))
 	bool ChangeHolding(UPARAM(meta = (Categories = "Player.Holding")) FGameplayTag NewHolding);
+
+	/**
+	 * Player request (Request* events): same as ChangePlayerState, but fires OnActionRefused when refused.
+	 * Use ChangePlayerState for system changes (GameMode, end of an action) that are not player requests.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerState", meta = (ReturnDisplayName = "Entered"))
+	bool TryEnterState(UPARAM(meta = (Categories = "Player.State")) FGameplayTag NewState);
+
+	/**
+	 * Enters NewState (same rules as ChangePlayerState), then goes back to Free after Duration seconds if the player is still in NewState.
+	 * Used for the fallback end of Kicking / Throwing and for Celebrating / Sulking. Any other state change cancels the timer.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerState", meta = (ReturnDisplayName = "Changed"))
+	bool ChangePlayerStateForDuration(UPARAM(meta = (Categories = "Player.State")) FGameplayTag NewState, float Duration);
+
+	/**
+	 * Keeps the current state for Duration seconds, then goes back to Free if the state did not change meanwhile.
+	 * Used to end Kicking / Throwing after the release when the animation has no Release notify (KickFallbackDuration / ThrowFallbackDuration).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerState")
+	void ReturnToFreeAfter(float Duration);
+
+	/** True when the move and look inputs have an effect (CurrentState is not in the profile's StatesBlockingMovement). */
+	UFUNCTION(BlueprintPure, Category = "PlayerState")
+	bool CanMove() const;
+
+	/** True when the sprint input has an effect (CurrentState is not in the profile's StatesBlockingSprint). */
+	UFUNCTION(BlueprintPure, Category = "PlayerState")
+	bool CanSprint() const;
+
+	/**
+	 * Scale to apply to the move input: 0 when CanMove is false, from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, 1 otherwise.
+	 * Scaling the input (not MaxWalkSpeed) keeps the sprint system untouched.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PlayerState")
+	float GetMoveSpeedMultiplier() const;
+
+	/**
+	 * Stick direction in world space for the forced run while Celebrating (call it from RequestMove instead of Add Movement Input).
+	 * The component runs forward at full speed every frame and turns toward this direction at the profile's CelebrationTurnRate. Zero: runs straight.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerState")
+	void SetCelebrationSteering(FVector WorldDirection);
+
+	/** Sets ActionCharge (clamped 0-1). Ignored outside Kicking / Throwing. */
+	UFUNCTION(BlueprintCallable, Category = "PlayerState")
+	void SetActionCharge(float Charge);
 
 	/** True when ChangePlayerState(NewState) would succeed: allowed by the transition table from CurrentState, and the hand rules (empty hands / holding) are met. */
 	UFUNCTION(BlueprintPure, Category = "PlayerState", meta = (ReturnDisplayName = "Allowed"))
@@ -89,4 +145,20 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+private:
+	/** Timer that brings the player back to Free (ChangePlayerStateForDuration, ReturnToFreeAfter). */
+	FTimerHandle StateDurationTimer;
+
+	/** Last stick direction received while Celebrating (flat, normalized, or zero). */
+	FVector CelebrationSteering = FVector::ZeroVector;
+
+	/** True when CurrentState is Kicking or Throwing. */
+	bool IsInChargedAction() const;
+
+	/** Ticks only for the debug text or the Celebrating run. */
+	void RefreshTickEnabled();
+
+	/** Forced run of the Celebrating state, called every frame. */
+	void TickCelebrationRun(float DeltaTime);
 };

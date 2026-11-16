@@ -1,7 +1,10 @@
 #include "Player/State/WB_PlayerStateComponent.h"
 
 #include "DrawDebugHelpers.h"
+#include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "TimerManager.h"
 #include "Player/State/WB_PlayerStateProfile.h"
 #include "Player/State/WB_PlayerStateTags.h"
 
@@ -34,7 +37,7 @@ UWB_PlayerStateComponent::UWB_PlayerStateComponent()
 void UWB_PlayerStateComponent::BeginPlay()
 {
 	Super::BeginPlay();
-	SetComponentTickEnabled(bDebugShowState);
+	RefreshTickEnabled();
 }
 
 const UWB_PlayerStateProfile* UWB_PlayerStateComponent::GetActiveProfile() const
@@ -77,10 +80,139 @@ bool UWB_PlayerStateComponent::ChangePlayerState(FGameplayTag NewState)
 		return false;
 	}
 
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(StateDurationTimer);
+	}
+
 	const FGameplayTag OldState = CurrentState;
 	CurrentState = NewState;
+	if (!IsInChargedAction())
+	{
+		ActionCharge = 0.f;
+	}
+	CelebrationSteering = FVector::ZeroVector;
+	RefreshTickEnabled();
 	OnPlayerStateChanged.Broadcast(OldState, NewState);
 	return true;
+}
+
+bool UWB_PlayerStateComponent::TryEnterState(FGameplayTag NewState)
+{
+	if (ChangePlayerState(NewState))
+	{
+		return true;
+	}
+	OnActionRefused.Broadcast(NewState);
+	return false;
+}
+
+bool UWB_PlayerStateComponent::ChangePlayerStateForDuration(FGameplayTag NewState, float Duration)
+{
+	if (!ChangePlayerState(NewState))
+	{
+		return false;
+	}
+	ReturnToFreeAfter(Duration);
+	return true;
+}
+
+void UWB_PlayerStateComponent::ReturnToFreeAfter(float Duration)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FGameplayTag StateToEnd = CurrentState;
+	if (Duration <= 0.f)
+	{
+		ChangePlayerState(WBTags::Player_State_Free);
+		return;
+	}
+
+	TWeakObjectPtr<UWB_PlayerStateComponent> WeakThis(this);
+	World->GetTimerManager().SetTimer(StateDurationTimer, FTimerDelegate::CreateLambda([WeakThis, StateToEnd]()
+	{
+		if (WeakThis.IsValid() && WeakThis->CurrentState == StateToEnd)
+		{
+			WeakThis->ChangePlayerState(WBTags::Player_State_Free);
+		}
+	}), Duration, false);
+}
+
+bool UWB_PlayerStateComponent::CanMove() const
+{
+	return !GetActiveProfile()->StatesBlockingMovement.HasTagExact(CurrentState);
+}
+
+bool UWB_PlayerStateComponent::CanSprint() const
+{
+	return !GetActiveProfile()->StatesBlockingSprint.HasTagExact(CurrentState);
+}
+
+float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
+{
+	if (!CanMove())
+	{
+		return 0.f;
+	}
+	if (IsInChargedAction())
+	{
+		return FMath::Lerp(1.f, GetActiveProfile()->ActionMoveSpeedMultiplier, ActionCharge);
+	}
+	return 1.f;
+}
+
+void UWB_PlayerStateComponent::SetActionCharge(float Charge)
+{
+	if (IsInChargedAction())
+	{
+		ActionCharge = FMath::Clamp(Charge, 0.f, 1.f);
+	}
+}
+
+void UWB_PlayerStateComponent::SetCelebrationSteering(FVector WorldDirection)
+{
+	CelebrationSteering = WorldDirection.GetSafeNormal2D();
+}
+
+void UWB_PlayerStateComponent::RefreshTickEnabled()
+{
+	SetComponentTickEnabled(bDebugShowState || CurrentState == WBTags::Player_State_Celebrating);
+}
+
+void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
+{
+	APawn* Pawn = Cast<APawn>(GetOwner());
+	if (!Pawn)
+	{
+		return;
+	}
+
+	FVector RunDirection = Pawn->GetActorForwardVector().GetSafeNormal2D();
+	if (!CelebrationSteering.IsNearlyZero())
+	{
+		// Turn the running direction toward the stick, at most CelebrationTurnRate degrees per second.
+		const float MaxStepRadians = FMath::DegreesToRadians(GetActiveProfile()->CelebrationTurnRate) * DeltaTime;
+		const float AngleToTarget = FMath::Acos(FMath::Clamp(FVector::DotProduct(RunDirection, CelebrationSteering), -1.f, 1.f));
+		if (AngleToTarget <= MaxStepRadians)
+		{
+			RunDirection = CelebrationSteering;
+		}
+		else
+		{
+			const float Sign = FVector::CrossProduct(RunDirection, CelebrationSteering).Z >= 0.f ? 1.f : -1.f;
+			RunDirection = RunDirection.RotateAngleAxisRad(Sign * MaxStepRadians, FVector::UpVector);
+		}
+	}
+	Pawn->AddMovementInput(RunDirection, 1.f);
+}
+
+bool UWB_PlayerStateComponent::IsInChargedAction() const
+{
+	return CurrentState == WBTags::Player_State_Kicking || CurrentState == WBTags::Player_State_Throwing;
 }
 
 bool UWB_PlayerStateComponent::ChangeHolding(FGameplayTag NewHolding)
@@ -115,12 +247,17 @@ bool UWB_PlayerStateComponent::IsHoldingAnything() const
 void UWB_PlayerStateComponent::SetDebugShowState(bool bShow)
 {
 	bDebugShowState = bShow;
-	SetComponentTickEnabled(bShow);
+	RefreshTickEnabled();
 }
 
 void UWB_PlayerStateComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (CurrentState == WBTags::Player_State_Celebrating)
+	{
+		TickCelebrationRun(DeltaTime);
+	}
 
 #if ENABLE_DRAW_DEBUG
 	const AActor* Owner = GetOwner();

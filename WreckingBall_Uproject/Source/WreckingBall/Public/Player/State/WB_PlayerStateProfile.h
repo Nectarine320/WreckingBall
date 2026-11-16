@@ -6,7 +6,7 @@
 #include "WB_PlayerStateProfile.generated.h"
 
 /**
- * Player state rules (Phase C, step 9): which state can follow which, hand rules, and fallback durations.
+ * Player state rules (Phase C, step 9): which state can follow which, hand rules, input filters and durations.
  * The constructor fills the transition table of the Phase C quote, so a new asset (DA_PlayerState_Default) starts ready to use.
  */
 UCLASS(BlueprintType)
@@ -29,19 +29,31 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesRequiringHolding;
 
-	/** Seconds before the ball leaves the foot and Kicking ends, used while the kick animation has no Release notify. */
+	/** States where the move and look inputs have no effect. Default: Disabled, Down. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
+	FGameplayTagContainer StatesBlockingMovement;
+
+	/** States where the sprint input has no effect (a sprint in progress is stopped by the Blueprint). Default: Disabled, Down, Stunned, Celebrating. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
+	FGameplayTagContainer StatesBlockingSprint;
+
+	/** Seconds Kicking lasts after the ball left the foot, used while the kick animation has no Release notify. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Durations", meta = (ClampMin = "0", Units = "Seconds"))
 	float KickFallbackDuration = 0.3f;
 
-	/** Seconds before the held object leaves the hands and Throwing ends, used while the throw animation has no Release notify. */
+	/** Seconds Throwing lasts after the object left the hands, used while the throw animation has no Release notify. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Durations", meta = (ClampMin = "0", Units = "Seconds"))
 	float ThrowFallbackDuration = 0.3f;
 
-	/** Seconds the scorer stays in Celebrating after a goal. The other players sulk for the same duration. */
+	/** Seconds the scoring team stays in Celebrating after a goal. The other team sulks for the same duration. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Durations", meta = (ClampMin = "0", Units = "Seconds"))
 	float CelebrationDuration = 2.f;
 
-	/** Walk speed multiplier while Kicking or Throwing (1 = normal speed). */
+	/** Turn speed in degrees per second of the forced run while Celebrating: how fast the running direction follows the stick. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", Units = "DegreesPerSecond"))
+	float CelebrationTurnRate = 270.f;
+
+	/** Move speed multiplier at full kick / throw charge while Kicking or Throwing. The speed goes from 1 (no charge) to this value (full charge). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
-	float ActionMoveSpeedMultiplier = 1.f;
+	float ActionMoveSpeedMultiplier = 0.5f;
 };

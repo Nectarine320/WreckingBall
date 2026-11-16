@@ -16,23 +16,30 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 		return Container;
 	};
 
-	// Transition table of the Phase C quote (2026-11-15). Hand rules are in StatesRequiringEmptyHands / StatesRequiringHolding.
+	// Transition table of the Phase C quote (updated 2026-11-15 with Sulking). Hand rules are in StatesRequiringEmptyHands / StatesRequiringHolding.
 	AllowedTransitions.Add(Player_State_Free, MakeContainer({
-		Player_State_Dashing, Player_State_Kicking, Player_State_Throwing,
-		Player_State_Stunned, Player_State_Down, Player_State_Disabled, Player_State_Celebrating }));
+		Player_State_Dashing, Player_State_Kicking, Player_State_Throwing, Player_State_Stunned,
+		Player_State_Down, Player_State_Disabled, Player_State_Celebrating, Player_State_Sulking }));
 
+	// An action in progress is cancelled by a goal (Celebrating / Sulking).
 	const FGameplayTagContainer FromAction = MakeContainer({
-		Player_State_Free, Player_State_Stunned, Player_State_Down, Player_State_Disabled });
+		Player_State_Free, Player_State_Stunned, Player_State_Down, Player_State_Disabled,
+		Player_State_Celebrating, Player_State_Sulking });
 	AllowedTransitions.Add(Player_State_Dashing, FromAction);
 	AllowedTransitions.Add(Player_State_Kicking, FromAction);
 	AllowedTransitions.Add(Player_State_Throwing, FromAction);
 
-	AllowedTransitions.Add(Player_State_Stunned, MakeContainer({ Player_State_Free, Player_State_Down, Player_State_Disabled }));
-	AllowedTransitions.Add(Player_State_Down, MakeContainer({ Player_State_Free, Player_State_Disabled }));
-	AllowedTransitions.Add(Player_State_Disabled, MakeContainer({ Player_State_Free, Player_State_Celebrating }));
+	// Stunned / Down: the scoring team goes to Celebrating; the other team keeps its state until the end of the celebration.
+	AllowedTransitions.Add(Player_State_Stunned, MakeContainer({ Player_State_Free, Player_State_Down, Player_State_Disabled, Player_State_Celebrating }));
+	AllowedTransitions.Add(Player_State_Down, MakeContainer({ Player_State_Free, Player_State_Disabled, Player_State_Celebrating }));
+	AllowedTransitions.Add(Player_State_Disabled, MakeContainer({ Player_State_Free, Player_State_Celebrating, Player_State_Sulking }));
 	AllowedTransitions.Add(Player_State_Celebrating, MakeContainer({ Player_State_Free, Player_State_Disabled }));
+	AllowedTransitions.Add(Player_State_Sulking, MakeContainer({ Player_State_Free, Player_State_Disabled }));
 
 	StatesRequiringEmptyHands.AddTag(Player_State_Dashing);
 	StatesRequiringHolding.AddTag(Player_State_Kicking);
 	StatesRequiringHolding.AddTag(Player_State_Throwing);
+
+	StatesBlockingMovement = MakeContainer({ Player_State_Disabled, Player_State_Down });
+	StatesBlockingSprint = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned, Player_State_Celebrating });
 }
