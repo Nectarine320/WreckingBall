@@ -31,13 +31,20 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWB_OnDiveStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDiveBallTouched, AActor*, Ball);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDiveLanded, bool, bTouchedBall);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDiveFinished, bool, bTouchedBall);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDefenseBallBlocked, AActor*, Ball);
 
 /**
- * Defensive dive (bodyguard jump): when a ball kicked by the other team is in flight, the player leaps toward a point of the ball's predicted path,
- * in the stick direction, facing the ball, with the body tilted toward the jump. No control during the jump (scripted, like the Dash).
- * A touch bounces the ball away from the body. Phases: Takeoff, Air (AirDuration), Land (plus MissStunDuration after a miss), GetUp, then Free.
- * Added to BP_GenericCharacter next to UWB_PlayerStateComponent (state Player.State.Diving). The energy is handled by the Blueprint
- * from the events (OnDiveStarted, OnDiveLanded, OnDiveFinished) and the costs of UWB_PlayerActionCostProfile.
+ * Dive button (IA_Dive), two moves (user decision 2026-11-17, Docs/Plans/plan-plongeon.md):
+ * - Pressed while moving: defensive dive (bodyguard jump) along the stick. When the ball (kicked or not, within MaxBallDistance) has a point of its
+ *   predicted path in the stick cone, the dive goes toward that point. Facing the ball, body tilted toward the jump; no control (scripted, like the Dash).
+ *   A touch bounces the ball away from the body. Phases: Takeoff, Air (AirDuration), Land (plus MissStunDuration after a miss), GetUp, then Free.
+ *   Land and GetUp play at RecoveryPlayRate.
+ * - Pressed without moving: defense stance (Player.State.Defending) while the button is held. X pose, keeps the direction the player faces
+ *   (no turn toward the ball), and that facing stays locked (straight moves). The move input is read in the player's own axes (AddDefenseMoveInput): A/D side steps, W/S slower forward / back
+ *   (DefenseMoveSpeedMultiplier of the state profile, DefenseForwardSpeedScale). The spread body blocks the ball.
+ *   Ends on release (StopDefense) or when another state takes over (Dash hit, goal, Disabled).
+ * Added to BP_GenericCharacter next to UWB_PlayerStateComponent. The dive energy is handled by the Blueprint from the events
+ * (OnDiveStarted, OnDiveLanded, OnDiveFinished) and the costs of UWB_PlayerActionCostProfile. The defense costs nothing.
  */
 UCLASS(Blueprintable, ClassGroup = (WreckingBall), meta = (BlueprintSpawnableComponent))
 class WRECKINGBALL_API UWB_PlayerDiveComponent : public UActorComponent
@@ -47,7 +54,7 @@ class WRECKINGBALL_API UWB_PlayerDiveComponent : public UActorComponent
 public:
 	UWB_PlayerDiveComponent();
 
-	/** Dive tuning (DA_PlayerDive_Default). Empty: the class defaults of UWB_PlayerDiveProfile are used (no ball class: the dive never starts). */
+	/** Dive and defense tuning (DA_PlayerDive_Default). Empty: the class defaults of UWB_PlayerDiveProfile are used (no ball class: no ball aim, no ball block). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive")
 	TObjectPtr<UWB_PlayerDiveProfile> DiveProfile;
 
@@ -71,14 +78,48 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "PlayerDive")
 	FWB_OnDiveFinished OnDiveFinished;
 
+	/** Called when the defense stance blocked a ball (the ball has already bounced off). */
+	UPROPERTY(BlueprintAssignable, Category = "PlayerDive|Defense")
+	FWB_OnDefenseBallBlocked OnDefenseBallBlocked;
+
 	/**
-	 * Player request (IA_Dive). Looks for a ball of the profile's BallClass in flight (MinBallSpeed, MaxBallDistance, kicked by the other team),
-	 * predicts its path over AirDuration and picks the point to reach in the stick direction (last move input; released: the whole circle).
-	 * No reachable point: dives MaxDistance along the stick (or toward the ball). Then enters Diving (state table, empty hands) and jumps.
-	 * Returns false (nothing happens) when there is no ball in flight or the state is refused. The Blueprint checks the energy (Exhausted) before.
+	 * True when the player is pushing the move input (stick or keys: X or Y axis not zero), read from the last move input. Decides what the dive button
+	 * does: moving = dive (TryStartDive), not moving = defense stance (TryStartDefense).
+	 */
+	UFUNCTION(BlueprintPure, Category = "PlayerDive")
+	bool HasMoveInput() const;
+
+	/**
+	 * Dive request (IA_Dive pressed while moving). Dives along the stick (last move input). When the closest ball of BallClass within MaxBallDistance
+	 * (kicked or not) has a point of its predicted path inside the stick cone (StickConeHalfAngle), the dive goes toward that point instead,
+	 * the reachable one closest to the stick first. No ball in the cone: MaxDistance straight along the stick. Then enters Diving (state table, empty hands).
+	 * Returns false (nothing happens) when the state is refused. The Blueprint checks the energy (Exhausted) before.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerDive", meta = (ReturnDisplayName = "Started"))
 	bool TryStartDive();
+
+	/**
+	 * Defense stance request (IA_Dive pressed without moving). Enters Defending (state table, empty hands): X pose, keeps the current facing, side steps,
+	 * blocks the ball. Kept until StopDefense (button released) or another state takes over. Returns false when the state is refused. Costs no energy.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerDive|Defense", meta = (ReturnDisplayName = "Started"))
+	bool TryStartDefense();
+
+	/** Button released (IA_Dive Completed / Canceled): leaves the defense stance, back to Free. Does nothing when not in the stance (a dive goes on). */
+	UFUNCTION(BlueprintCallable, Category = "PlayerDive|Defense")
+	void StopDefense();
+
+	/**
+	 * Move input in the defense stance (called by RequestMove instead of the camera-relative Move while IsDefending). The axes follow the player's
+	 * facing, not the camera (wanted: a player turned 30 degrees has WASD turned 30 degrees too). RightAxis (A/D): side steps; ForwardAxis (W/S):
+	 * toward / away from the faced direction, scaled by DefenseForwardSpeedScale. Both are scaled by the state's move speed multiplier.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerDive|Defense")
+	void AddDefenseMoveInput(float RightAxis, float ForwardAxis);
+
+	/** True while in the defense stance. */
+	UFUNCTION(BlueprintPure, Category = "PlayerDive|Defense")
+	bool IsDefending() const { return bDefending; }
 
 	/** Phase of the dive (None when not diving). */
 	UFUNCTION(BlueprintPure, Category = "PlayerDive")
@@ -147,17 +188,24 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> FlashShown;
 
+	/** Defense stance: active, yaw kept when no ball is in range, movement settings restored at the end. */
+	bool bDefending = false;
+	float DefenseYaw = 0.f;
+	bool bOrientRotationToMovementBefore = false;
+	bool bUseControllerDesiredRotationBefore = false;
+	bool bUseControllerRotationYawBefore = false;
+
 	/** Set while the component itself changes the state (end of the dive), so the state handler does not treat it as an interruption. */
 	bool bChangingStateItself = false;
 
 	/** Simulated primitive of a ball actor (root or first simulated primitive). */
 	static UPrimitiveComponent* FindBallBody(AActor* Ball);
 
-	/** True when Ball was last sent by a player of the other team (or by no known team). */
-	bool IsEnemyBall(AActor* Ball) const;
+	/** Body of the closest ball of BallClass within MaxBallDistance of From (simulated body, or root primitive when held). Null: none. */
+	UPrimitiveComponent* FindClosestBall(const FVector& From) const;
 
-	/** Picks the target and fills the planned jump. Returns false when no ball is in flight. */
-	bool PlanDive();
+	/** Picks the target and fills the planned jump (always succeeds: no ball in the cone means straight along the stick). */
+	void PlanDive();
 
 	/** Height in cm above the ground of the body center at jump fraction A (0..1). */
 	float BodyHeightAt(float A) const;
@@ -170,6 +218,15 @@ private:
 
 	/** Ball touch test of the stretched body, and bounce. */
 	void TestBallTouch();
+
+	/** Bounces Ball off the body at Contact (closest body point), like on a wall moving at BodyVelocity. Returns false when the ball was not moving into the body. */
+	bool BounceBall(UPrimitiveComponent* Ball, const FVector& Contact, const FVector& BodyVelocity) const;
+
+	/** Defense stance, every frame: turn toward the ball, ball block. */
+	void TickDefense(float DeltaTime);
+
+	/** Leaves the defense stance: restores the rotation settings; Free when bReturnToFree. */
+	void EndDefense(bool bReturnToFree);
 
 	/** Touchdown: Land phase, OnDiveLanded. */
 	void Touchdown();

@@ -110,7 +110,7 @@ public:
 
 	/**
 	 * Scale to apply to the move input: 0 when CanMove is false (Disabled, Down, Stunned by default),
-	 * from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, 1 otherwise.
+	 * from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, DefenseMoveSpeedMultiplier while Defending, 1 otherwise.
 	 * Scaling the input (not MaxWalkSpeed) keeps the sprint system untouched.
 	 */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")

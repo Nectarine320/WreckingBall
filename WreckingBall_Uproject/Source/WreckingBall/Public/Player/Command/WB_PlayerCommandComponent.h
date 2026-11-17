@@ -77,6 +77,62 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand")
 	bool IsMoving() const { return bMoving; }
 
+	// ---- Readout: values the owner Blueprint keeps in its own variables (energy, Dash), read by name for the bots. ----
+
+	/** Owner Blueprint float variable holding the energy, 0 (empty) to 1 (full). BP_GenericCharacter: Sprint Lifetime Percent. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
+	FName EnergyPercentVariable = TEXT("Sprint Lifetime Percent");
+
+	/** Owner Blueprint enum variable of the walk mode. BP_GenericCharacter: WalkType (E_WalkSpeed). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
+	FName WalkTypeVariable = TEXT("WalkType");
+
+	/** Display name of the WalkTypeVariable value meaning exhausted (RequestDash refuses the Dash then). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
+	FString ExhaustedWalkType = TEXT("Exhausted");
+
+	/** Owner Blueprint float variable of the distance in cm a full Dash travels. BP_GenericCharacter: DashScanDistance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
+	FName DashDistanceVariable = TEXT("DashScanDistance");
+
+	/** Owner Blueprint float variable of the duration in seconds of a full Dash. BP_GenericCharacter: Dash Speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
+	FName DashDurationVariable = TEXT("Dash Speed");
+
+	/** Owner Blueprint float variable of the minimum run-up in cm for a Dash to knock a player Down. BP_GenericCharacter: DashMinRunUpDistancePlayer. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
+	FName DashMinRunUpVariable = TEXT("DashMinRunUpDistancePlayer");
+
+	/** Energy of the owner, 0..1 (EnergyPercentVariable). 1 when the variable is missing. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
+	float GetEnergyPercent() const;
+
+	/** True while the owner is exhausted (WalkTypeVariable equals ExhaustedWalkType): its Dash is refused. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
+	bool IsExhausted() const;
+
+	/** Energy used by one Dash (ActionCostProfile of the owner's UWB_PlayerStateComponent), 0..1. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
+	float GetDashEnergyCost() const;
+
+	/** Distance in cm of a full Dash (DashDistanceVariable). 350 when the variable is missing. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
+	float GetDashDistance() const;
+
+	/** Duration in seconds of a full Dash (DashDurationVariable). 0.2 when the variable is missing. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
+	float GetDashDuration() const;
+
+	/** Minimum run-up in cm for a Dash to knock a player Down (DashMinRunUpVariable). 35 when the variable is missing. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
+	float GetDashMinRunUp() const;
+
 private:
 	bool bMoving = false;
+
+	/** Reads a float (or integer) variable of the owner by name. False (and a warning once) when it is missing. */
+	bool ReadOwnerNumber(FName Variable, float& OutValue) const;
+
+	/** Variables already reported as missing, so the warning is logged once. */
+	mutable TSet<FName> WarnedVariables;
 };

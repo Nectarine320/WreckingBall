@@ -17,37 +17,29 @@ class WRECKINGBALL_API UWB_PlayerDiveProfile : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	// ---- Trigger ----
+	// ---- Target ----
 
-	/** Ball actors the dive looks for (BP_PO_Master_Ball_01 and its children). Empty: the dive never starts. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Trigger")
+	/** Ball actors the dive and the defense look for (BP_PO_Master_Ball_01 and its children). Empty: the dive always goes straight along the stick. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Target")
 	TSubclassOf<AActor> BallClass;
 
-	/** Minimum ball speed in cm/s for the ball to count as kicked and in flight. Slower (rolling to a stop, held): no dive. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Trigger", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
-	float MinBallSpeed = 400.f;
-
-	/** Balls farther than this (cm, from the player) are ignored. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Trigger", meta = (ClampMin = "0", Units = "Centimeters"))
-	float MaxBallDistance = 1500.f;
-
-	/** True: only a ball last kicked or thrown by a player of the other team starts a dive (a ball with no team or no player counts as enemy). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Trigger")
-	bool bOnlyEnemyBall = true;
+	/** Range in cm around the player: a ball within it (kicked or not) is aimed at by the dive when it is in the stick cone. Farther: ignored. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Target", meta = (ClampMin = "0", Units = "Centimeters"))
+	float MaxBallDistance = 1200.f;
 
 	// ---- Jump ----
 
 	/** Seconds in the air, from takeoff to touchdown. The landing and the get-up come after. Main speed setting of the dive. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0.2", Units = "Seconds"))
-	float AirDuration = 0.75f;
+	float AirDuration = 0.375f;
 
 	/** Shortest dive in cm (flat distance from takeoff to touchdown). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
 	float MinDistance = 200.f;
 
-	/** Longest dive in cm. Also the distance of a dive that finds no reachable point on the ball path (straight along the stick). */
+	/** Longest dive in cm. Also the distance of a dive straight along the stick (no ball in range or in the stick cone). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
-	float MaxDistance = 500.f;
+	float MaxDistance = 800.f;
 
 	/** Lowest height in cm above the ground of the body at the top of the dive (a low dive along the floor). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
@@ -57,9 +49,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
 	float MaxHeight = 225.f;
 
+	/**
+	 * Height in cm above the ground of the body at the top of a dive straight along the stick (no ball in the cone). Above the standing height
+	 * (about 90), the dive draws an arc: fast rise, top, then a fall that speeds up. A dive aimed at a ball uses the ball's height instead.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
+	float FreeDiveHeight = 140.f;
+
 	// ---- Aim ----
 
-	/** Half angle in degrees of the cone around the stick direction where the dive looks for the ball path (30 = a 60 degree cone). Stick released: the whole circle. */
+	/** Half angle in degrees of the cone around the stick direction where the dive looks for the ball path (30 = a 60 degree cone). Ball in the cone: the dive goes toward it; outside: straight along the stick. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Aim", meta = (ClampMin = "0", ClampMax = "180", Units = "Degrees"))
 	float StickConeHalfAngle = 30.f;
 
@@ -99,15 +98,40 @@ public:
 
 	// ---- Ball ----
 
-	/** Share of the ball speed kept when it bounces off the diver (0..1), away from the body like on a wall. */
+	/** Share of the ball speed kept when it bounces off the diver or the defense stance (0..1), away from the body like on a wall. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Ball", meta = (ClampMin = "0", ClampMax = "1"))
 	float BallBounceRestitution = 0.6f;
+
+	// ---- Defense ----
+
+	/** Speed of W/S (forward / back, toward or away from the ball) in the defense stance, as a share of the side-step speed of A/D. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", ClampMax = "1"))
+	float DefenseForwardSpeedScale = 0.5f;
+
+	/** Half width in cm of the blocking body in the defense stance (arms and legs spread in an X), sideways from the body axis. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", Units = "Centimeters"))
+	float DefenseBlockHalfWidth = 70.f;
+
+	/** Half thickness in cm of the blocking body in the defense stance, front to back. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", Units = "Centimeters"))
+	float DefenseBlockHalfThickness = 25.f;
+
+	/** Height in cm the raised hands add above the capsule top in the defense stance. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", Units = "Centimeters"))
+	float DefenseBlockExtraHeight = 20.f;
 
 	// ---- Landing ----
 
 	/** Seconds the player stays on the ground after a dive that missed the ball (small stun), between the landing and the get-up. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Landing", meta = (ClampMin = "0", Units = "Seconds"))
-	float MissStunDuration = 0.5f;
+	float MissStunDuration = 0.25f;
+
+	/**
+	 * Play rate of the recovery after the touchdown: the landing (LandAnim) and the get-up (GetUpAnim) play this much faster, and their phases
+	 * last their length divided by it (2 = half as long). ABP_SoccerPlayer reads it for the Play Rate of both sequence players.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Landing", meta = (ClampMin = "0.1"))
+	float RecoveryPlayRate = 2.f;
 
 	/** Seconds of the landing when LandAnim is empty. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Landing", meta = (ClampMin = "0", Units = "Seconds"))

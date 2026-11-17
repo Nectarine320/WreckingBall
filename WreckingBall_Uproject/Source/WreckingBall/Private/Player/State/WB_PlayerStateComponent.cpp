@@ -214,6 +214,10 @@ float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
 		}
 		return FMath::Lerp(1.f, GetActiveProfile()->ActionMoveSpeedMultiplier, ActionCharge);
 	}
+	if (CurrentState == WBTags::Player_State_Defending)
+	{
+		return GetActiveProfile()->DefenseMoveSpeedMultiplier;
+	}
 	return 1.f;
 }
 

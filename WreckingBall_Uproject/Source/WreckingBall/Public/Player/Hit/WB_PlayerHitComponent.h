@@ -70,6 +70,13 @@ public:
 	bool ReceiveDashHit(AActor* Dasher, FVector Direction);
 
 	/**
+	 * True when a Dash of Dasher would knock this player Down now: same rules as ReceiveDashHit (friendly fire, cooldown, grace, state table),
+	 * without the run-up check. Lets a bot skip a Dash that cannot work.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PlayerHit", meta = (ReturnDisplayName = "CanBeKnockedDown"))
+	bool CanBeDashedBy(AActor* Dasher) const;
+
+	/**
 	 * The Dash of this player hit a surface too heavy to break (HitActor: the surface, HitNormal: the sweep impact normal, DashDirection: the Dash direction,
 	 * RunUpDistance: cm travelled by the Dash before the impact). Only while Dashing, never on another player, and not on a mostly vertical normal (RecoilMaxNormalZ).
 	 * Head-on (angle at or below RecoilStunAngle): Stunned, with the stun durations and animations, and OnHitReceived is broadcast. Side hit: Recoiling for RecoilDuration.

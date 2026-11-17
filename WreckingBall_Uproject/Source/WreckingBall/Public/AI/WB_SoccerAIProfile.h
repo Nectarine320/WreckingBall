@@ -60,13 +60,32 @@ public:
 
 	// ---- Dash ----
 
-	/** The bot Dashes on the opponent ball carrier when the distance is between DashMinDistance and DashMaxDistance. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0"))
-	float DashMinDistance = 300.f;
+	/**
+	 * Fraction of the real Dash reach used by the bot. Reach: the Dash distance of the pawn (DashScanDistance) plus both capsule radii.
+	 * The bot Dashes only when the predicted position of the target is within Reach x DashReachRatio. Lower: safer but rarer Dashes.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0.1", ClampMax = "1.5"))
+	float DashReachRatio = 0.9f;
 
-	/** See DashMinDistance. */
+	/** Extra cm added to the minimum run-up of the pawn (DashMinRunUpDistancePlayer): closer than that, the Dash would not knock Down. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0"))
-	float DashMaxDistance = 600.f;
+	float DashRunUpMargin = 20.f;
+
+	/** Energy (0..1) the bot keeps after a Dash: it Dashes only when Energy >= Dash cost + this reserve. 0: may empty the bar (then exhausted). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", ClampMax = "1"))
+	float DashEnergyReserve = 0.1f;
+
+	/** How much the bot leads the target: aims at Location + Velocity x Dash travel time x this. 0: aims at the current position. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", ClampMax = "2"))
+	float DashLeadFactor = 1.f;
+
+	/** True: no Dash when a wall or a non-physics object stands on the Dash line (the Dash would stop or bounce back). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash")
+	bool bDashNeedsClearLine = true;
+
+	/** True: no Dash when a teammate the Dash would knock Down stands on the line (friendly fire). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash")
+	bool bDashAvoidTeammates = true;
 
 	/** Random yaw (plus or minus) added to the Dash direction, so a Dash can miss. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", ClampMax = "90"))

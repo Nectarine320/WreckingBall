@@ -7,13 +7,13 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
-#include "Feedback/WB_FeedbackLibrary.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
 #include "TimerManager.h"
 #include "Player/Dive/WB_PlayerDiveProfile.h"
-#include "Player/Hit/WB_PlayerHitComponent.h"
 #include "Player/State/WB_PlayerStateComponent.h"
 #include "Player/State/WB_PlayerStateTags.h"
 
@@ -33,7 +33,7 @@ namespace
 
 UWB_PlayerDiveComponent::UWB_PlayerDiveComponent()
 {
-	// Ticks only during a dive.
+	// Ticks only during a dive or the defense stance.
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
@@ -82,48 +82,62 @@ UPrimitiveComponent* UWB_PlayerDiveComponent::FindBallBody(AActor* Ball)
 	return nullptr; // Held (attached, not simulated): not in flight.
 }
 
-bool UWB_PlayerDiveComponent::IsEnemyBall(AActor* Ball) const
+UPrimitiveComponent* UWB_PlayerDiveComponent::FindClosestBall(const FVector& From) const
 {
-	if (!GetActiveDiveProfile()->bOnlyEnemyBall)
+	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
+	UWorld* World = GetWorld();
+	if (!World || !Profile->BallClass)
 	{
-		return true;
+		return nullptr;
 	}
-	const APawn* Responsible = UWB_FeedbackLibrary::GetResponsiblePawn(Ball);
-	if (!Responsible)
+	UPrimitiveComponent* Best = nullptr;
+	float BestDistSq = FMath::Square(Profile->MaxBallDistance);
+	for (TActorIterator<AActor> It(World, Profile->BallClass); It; ++It)
 	{
-		return true; // Nobody sent it (or it fell asleep since): counts as enemy.
+		// Kicked or not: a held ball (not simulated) counts too, at its root.
+		UPrimitiveComponent* Body = FindBallBody(*It);
+		if (!Body)
+		{
+			Body = Cast<UPrimitiveComponent>(It->GetRootComponent());
+		}
+		if (!Body)
+		{
+			continue;
+		}
+		const float DistSq = FVector::DistSquared(Body->GetComponentLocation(), From);
+		if (DistSq <= BestDistSq)
+		{
+			BestDistSq = DistSq;
+			Best = Body;
+		}
 	}
-	if (Responsible == GetOwner())
-	{
-		return false;
-	}
-	const UWB_PlayerHitComponent* MyHit = GetOwner()->FindComponentByClass<UWB_PlayerHitComponent>();
-	const UWB_PlayerHitComponent* OtherHit = Responsible->FindComponentByClass<UWB_PlayerHitComponent>();
-	if (MyHit && OtherHit && MyHit->TeamIndex >= 0 && MyHit->TeamIndex == OtherHit->TeamIndex)
-	{
-		return false; // Teammate's ball.
-	}
-	return true;
+	return Best;
+}
+
+bool UWB_PlayerDiveComponent::HasMoveInput() const
+{
+	const APawn* Pawn = Cast<APawn>(GetOwner());
+	return Pawn && !Pawn->GetLastMovementInputVector().IsNearlyZero(KINDA_SMALL_NUMBER);
 }
 
 bool UWB_PlayerDiveComponent::TryStartDive()
 {
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
-	if (Phase != EWB_DivePhase::None || !PlayerState || !Character || !Character->GetCapsuleComponent() || !Character->GetMesh())
+	if (Phase != EWB_DivePhase::None || bDefending || !PlayerState || !Character || !Character->GetCapsuleComponent() || !Character->GetMesh())
 	{
 		return false;
 	}
-	// Cheap checks first (state table, empty hands), then the ball search.
-	if (!PlayerState->CanEnterState(WBTags::Player_State_Diving) || !PlanDive())
+	if (!PlayerState->CanEnterState(WBTags::Player_State_Diving))
 	{
 		return false;
 	}
+	PlanDive();
 	if (!PlayerState->TryEnterState(WBTags::Player_State_Diving))
 	{
 		return false;
 	}
 
-	// Face the ball (the body then tilts toward the jump direction: a side dive lies on its side, like a goalkeeper).
+	// Face the ball when one is in range (the body then tilts toward the jump direction: a side dive lies on its side, like a goalkeeper).
 	FVector ToBall = FVector::ZeroVector;
 	if (const UPrimitiveComponent* Ball = TargetBall.Get())
 	{
@@ -163,136 +177,138 @@ bool UWB_PlayerDiveComponent::TryStartDive()
 	return true;
 }
 
-bool UWB_PlayerDiveComponent::PlanDive()
+void UWB_PlayerDiveComponent::PlanDive()
 {
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
 	UWorld* World = GetWorld();
-	if (!Character || !World || !Profile->BallClass)
-	{
-		return false;
-	}
 	const float HalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	StartLocation = Character->GetActorLocation();
 	StartGroundZ = StartLocation.Z - HalfHeight;
 
-	// Closest ball in flight, sent by the other team.
-	UPrimitiveComponent* BestBall = nullptr;
-	float BestDistSq = FMath::Square(Profile->MaxBallDistance);
-	for (TActorIterator<AActor> It(World, Profile->BallClass); It; ++It)
-	{
-		UPrimitiveComponent* Body = FindBallBody(*It);
-		if (!Body || Body->GetPhysicsLinearVelocity().Size() < Profile->MinBallSpeed || !IsEnemyBall(*It))
-		{
-			continue;
-		}
-		const float DistSq = FVector::DistSquared(Body->GetComponentLocation(), StartLocation);
-		if (DistSq <= BestDistSq)
-		{
-			BestDistSq = DistSq;
-			BestBall = Body;
-		}
-	}
-	if (!BestBall)
-	{
-		return false;
-	}
-	TargetBall = BestBall;
-
-	// Stick direction (last move input, world space). Released: no cone.
+	// Stick direction (last move input, world space). The dive needs a move input; none (called from elsewhere): straight forward.
 	FVector Stick = Character->GetLastMovementInputVector();
 	Stick.Z = 0.f;
-	const bool bHasStick = Stick.SizeSquared() > FMath::Square(0.2f);
-	Stick = Stick.GetSafeNormal();
+	Stick = Stick.IsNearlyZero() ? Character->GetActorForwardVector().GetSafeNormal2D() : Stick.GetSafeNormal();
 	const float CosCone = FMath::Cos(FMath::DegreesToRadians(Profile->StickConeHalfAngle));
 
-	// Ball path over the jump (gravity, no bounce; it does not go below the floor).
-	const FVector P0 = BestBall->GetComponentLocation();
-	const FVector V0 = BestBall->GetPhysicsLinearVelocity();
-	const float GravityZ = BestBall->IsGravityEnabled() ? World->GetGravityZ() : 0.f;
-	const float BallRadius = BestBall->Bounds.SphereRadius;
+	// Default: full length straight along the stick, in an arc (top a bit before the middle: fast rise, longer fall).
+	JumpDirection = Stick;
+	JumpDistance = Profile->MaxDistance;
+	PeakBodyHeight = Profile->FreeDiveHeight;
+	PeakFraction = 0.45f;
+
+	UPrimitiveComponent* Ball = FindClosestBall(StartLocation);
+	TargetBall = Ball;
+	bool bReachable = false;
+	bool bInCone = false;
 	const float T = FMath::Max(Profile->AirDuration, 0.2f);
-	const FVector StartFlat(StartLocation.X, StartLocation.Y, 0.f);
 
-	bool bFound = false;
-	float BestScore = TNumericLimits<float>::Max();
-	const float MinA = FMath::Clamp(Profile->MinInterceptFraction, 0.05f, 1.f);
-	const float MaxA = FMath::Clamp(Profile->MaxInterceptFraction, MinA, 1.f);
-	for (int32 i = 0; i < PathSamples; ++i)
+	FVector P0 = FVector::ZeroVector;
+	FVector V0 = FVector::ZeroVector;
+	float GravityZ = 0.f;
+	float BallRadius = 0.f;
+	if (Ball && World)
 	{
-		const float A = FMath::Lerp(MinA, MaxA, PathSamples > 1 ? static_cast<float>(i) / (PathSamples - 1) : 0.f);
-		const float Time = A * T;
-		FVector B = P0 + V0 * Time + FVector(0.f, 0.f, 0.5f * GravityZ * Time * Time);
-		B.Z = FMath::Max(B.Z, StartGroundZ + BallRadius);
+		// Ball path over the jump (gravity, no bounce; it does not go below the floor). A ball at rest or held: a fixed point.
+		P0 = Ball->GetComponentLocation();
+		const bool bSimulating = Ball->IsSimulatingPhysics();
+		V0 = bSimulating ? Ball->GetPhysicsLinearVelocity() : FVector::ZeroVector;
+		GravityZ = bSimulating && Ball->IsGravityEnabled() ? World->GetGravityZ() : 0.f;
+		BallRadius = Ball->Bounds.SphereRadius;
+		const FVector StartFlat(StartLocation.X, StartLocation.Y, 0.f);
 
-		const FVector Flat(B.X - StartFlat.X, B.Y - StartFlat.Y, 0.f);
-		const float FlatDist = Flat.Size();
-		const FVector Dir = FlatDist > 1.f ? Flat / FlatDist : (bHasStick ? Stick : Character->GetActorForwardVector().GetSafeNormal2D());
-		if (bHasStick && FVector::DotProduct(Dir, Stick) < CosCone)
+		float BestScore = TNumericLimits<float>::Max();
+		float BestError = TNumericLimits<float>::Max();
+		const float MinA = FMath::Clamp(Profile->MinInterceptFraction, 0.05f, 1.f);
+		const float MaxA = FMath::Clamp(Profile->MaxInterceptFraction, MinA, 1.f);
+		for (int32 i = 0; i < PathSamples; ++i)
 		{
-			continue; // Outside the stick cone.
-		}
-		// The body moves at constant speed: at fraction A it is A x Distance away.
-		const float Distance = FMath::Clamp(FlatDist / A, Profile->MinDistance, Profile->MaxDistance);
-		const float FlatError = FMath::Abs(FlatDist - Distance * A);
-		const float BallHeight = B.Z - StartGroundZ;
-		const float Height = FMath::Clamp(BallHeight, Profile->MinHeight, Profile->MaxHeight);
-		const float Error = FMath::Sqrt(FMath::Square(FlatError) + FMath::Square(BallHeight - Height));
-		if (Error > Profile->PlanningReach)
-		{
-			continue;
-		}
-		// With the stick: the point closest to the stick direction (then the earliest). Without: the earliest point (most urgent).
-		const float Score = bHasStick ? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Dir, Stick), -1.f, 1.f))) + A * 10.f : A;
-		if (Score < BestScore)
-		{
-			BestScore = Score;
-			bFound = true;
-			JumpDirection = Dir;
-			JumpDistance = Distance;
-			PeakBodyHeight = Height;
-			PeakFraction = A;
-		}
-	}
+			const float A = FMath::Lerp(MinA, MaxA, PathSamples > 1 ? static_cast<float>(i) / (PathSamples - 1) : 0.f);
+			const float Time = A * T;
+			FVector B = P0 + V0 * Time + FVector(0.f, 0.f, 0.5f * GravityZ * Time * Time);
+			B.Z = FMath::Max(B.Z, StartGroundZ + BallRadius);
 
-	if (!bFound)
-	{
-		// No reachable point: full length along the stick, or toward the ball, low.
-		const FVector ToBall = FVector(P0.X - StartFlat.X, P0.Y - StartFlat.Y, 0.f).GetSafeNormal();
-		JumpDirection = bHasStick ? Stick : (ToBall.IsNearlyZero() ? Character->GetActorForwardVector().GetSafeNormal2D() : ToBall);
-		JumpDistance = Profile->MaxDistance;
-		PeakBodyHeight = Profile->MinHeight;
-		PeakFraction = 0.5f;
+			const FVector Flat(B.X - StartFlat.X, B.Y - StartFlat.Y, 0.f);
+			const float FlatDist = Flat.Size();
+			const FVector Dir = FlatDist > 1.f ? Flat / FlatDist : Stick;
+			const float Dot = FVector::DotProduct(Dir, Stick);
+			if (Dot < CosCone)
+			{
+				continue; // Outside the stick cone: the stick wins.
+			}
+			// The body moves at constant speed: at fraction A it is A x Distance away.
+			const float Distance = FMath::Clamp(FlatDist / A, Profile->MinDistance, Profile->MaxDistance);
+			const float FlatError = FMath::Abs(FlatDist - Distance * A);
+			const float BallHeight = B.Z - StartGroundZ;
+			const float Height = FMath::Clamp(BallHeight, Profile->MinHeight, Profile->MaxHeight);
+			const float Error = FMath::Sqrt(FMath::Square(FlatError) + FMath::Square(BallHeight - Height));
+
+			auto Take = [&]()
+			{
+				JumpDirection = Dir;
+				JumpDistance = Distance;
+				PeakBodyHeight = Height;
+				PeakFraction = A;
+			};
+			if (Error <= Profile->PlanningReach)
+			{
+				// Reachable: the point closest to the stick direction, then the earliest.
+				const float Score = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.f, 1.f))) + A * 10.f;
+				if (!bReachable || Score < BestScore)
+				{
+					BestScore = Score;
+					bReachable = true;
+					Take();
+				}
+			}
+			else if (!bReachable && Error < BestError)
+			{
+				// In the cone but out of reach (too far, too high): still toward the ball, as close as the jump gets.
+				BestError = Error;
+				bInCone = true;
+				Take();
+			}
+		}
 	}
 	PeakFraction = FMath::Clamp(PeakFraction, 0.1f, 0.9f);
 
 	// Ground under the touchdown point (steps, slopes). Nothing close: same height as the start.
 	EndGroundZ = StartGroundZ;
 	const FVector EndFlat = StartLocation + JumpDirection * JumpDistance;
-	FHitResult GroundHit;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(WBDiveGround), false, GetOwner());
-	Params.AddIgnoredActor(BestBall->GetOwner());
-	if (World->LineTraceSingleByChannel(GroundHit, FVector(EndFlat.X, EndFlat.Y, StartGroundZ + 100.f), FVector(EndFlat.X, EndFlat.Y, StartGroundZ - 200.f), ECC_Visibility, Params))
+	if (World)
 	{
-		EndGroundZ = GroundHit.ImpactPoint.Z;
+		FHitResult GroundHit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(WBDiveGround), false, GetOwner());
+		if (Ball)
+		{
+			Params.AddIgnoredActor(Ball->GetOwner());
+		}
+		if (World->LineTraceSingleByChannel(GroundHit, FVector(EndFlat.X, EndFlat.Y, StartGroundZ + 100.f), FVector(EndFlat.X, EndFlat.Y, StartGroundZ - 200.f), ECC_Visibility, Params))
+		{
+			EndGroundZ = GroundHit.ImpactPoint.Z;
+		}
 	}
 
 #if ENABLE_DRAW_DEBUG
-	if (bDebugDrawDive)
+	if (bDebugDrawDive && World)
 	{
-		for (int32 i = 0; i <= PathSamples; ++i)
+		if (Ball)
 		{
-			const float Time = T * i / PathSamples;
-			FVector B = P0 + V0 * Time + FVector(0.f, 0.f, 0.5f * GravityZ * Time * Time);
-			B.Z = FMath::Max(B.Z, StartGroundZ + BallRadius);
-			DrawDebugPoint(World, B, 8.f, FColor::Orange, false, 2.f);
+			for (int32 i = 0; i <= PathSamples; ++i)
+			{
+				const float Time = T * i / PathSamples;
+				FVector B = P0 + V0 * Time + FVector(0.f, 0.f, 0.5f * GravityZ * Time * Time);
+				B.Z = FMath::Max(B.Z, StartGroundZ + BallRadius);
+				DrawDebugPoint(World, B, 8.f, FColor::Orange, false, 2.f);
+			}
 		}
 		const FVector Peak = StartLocation + JumpDirection * (JumpDistance * PeakFraction);
-		DrawDebugSphere(World, FVector(Peak.X, Peak.Y, StartGroundZ + PeakBodyHeight), 20.f, 8, bFound ? FColor::Green : FColor::Red, false, 2.f);
+		const FColor TargetColor = bReachable ? FColor::Green : (bInCone ? FColor::Red : FColor::White);
+		DrawDebugSphere(World, FVector(Peak.X, Peak.Y, StartGroundZ + PeakBodyHeight), 20.f, 8, TargetColor, false, 2.f);
 		DrawDebugLine(World, StartLocation, FVector(EndFlat.X, EndFlat.Y, EndGroundZ + HalfHeight), FColor::Cyan, false, 2.f, 0, 2.f);
 	}
 #endif
-	return true;
 }
 
 float UWB_PlayerDiveComponent::BodyHeightAt(float A) const
@@ -300,15 +316,14 @@ float UWB_PlayerDiveComponent::BodyHeightAt(float A) const
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	const float Standing = Character ? Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 90.f;
 	const float Lying = GetActiveDiveProfile()->LyingHeight;
+	// Ballistic arc (parabola): the rise starts at full vertical speed and slows to zero at the top, the fall then speeds up to the floor.
 	if (A <= PeakFraction)
 	{
-		// Rise fast, slow at the top.
 		const float S = A / FMath::Max(PeakFraction, KINDA_SMALL_NUMBER);
-		return FMath::Lerp(Standing, PeakBodyHeight, FMath::Sin(S * HALF_PI));
+		return FMath::Lerp(Standing, PeakBodyHeight, 1.f - FMath::Square(1.f - S));
 	}
-	// Fall slowly from the top, fast at the end (gravity feel), down to the floor.
 	const float S = (A - PeakFraction) / FMath::Max(1.f - PeakFraction, KINDA_SMALL_NUMBER);
-	return FMath::Lerp(PeakBodyHeight, Lying, 1.f - FMath::Cos(S * HALF_PI));
+	return FMath::Lerp(PeakBodyHeight, Lying, FMath::Square(S));
 }
 
 void UWB_PlayerDiveComponent::ApplyMeshPose(float TiltAlpha, float BodyOffset)
@@ -335,6 +350,12 @@ void UWB_PlayerDiveComponent::ApplyMeshPose(float TiltAlpha, float BodyOffset)
 void UWB_PlayerDiveComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (bDefending)
+	{
+		TickDefense(DeltaTime);
+		return;
+	}
 
 	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
 	switch (Phase)
@@ -457,26 +478,36 @@ void UWB_PlayerDiveComponent::TestBallTouch()
 		return;
 	}
 
-	// Bounce away from the body, like on a wall: the speed toward the body is reversed, scaled by the restitution.
-	const FVector Velocity = Ball->GetPhysicsLinearVelocity();
-	FVector Normal = (BallCenter - Closest).GetSafeNormal();
+	// The body moves at the jump's flat speed: a ball at rest is knocked away, a ball flying in bounces off.
+	const FVector BodyVelocity = bBlockedForward ? FVector::ZeroVector : JumpDirection * (JumpDistance / FMath::Max(Profile->AirDuration, 0.2f));
+	if (!BounceBall(Ball, Closest, BodyVelocity))
+	{
+		return;
+	}
+	bTouchedBall = true;
+	UE_LOG(LogWBPlayerDive, Verbose, TEXT("%s touched %s."), *GetNameSafe(Character), *GetNameSafe(Ball->GetOwner()));
+	OnDiveBallTouched.Broadcast(Ball->GetOwner());
+}
+
+bool UWB_PlayerDiveComponent::BounceBall(UPrimitiveComponent* Ball, const FVector& Contact, const FVector& BodyVelocity) const
+{
+	// Bounce away from the body, like on a wall moving at BodyVelocity: the speed toward the body (relative to it) is reversed, scaled by the restitution.
+	const FVector Relative = Ball->GetPhysicsLinearVelocity() - BodyVelocity;
+	FVector Normal = (Ball->GetComponentLocation() - Contact).GetSafeNormal();
 	if (Normal.IsNearlyZero())
 	{
-		Normal = -Velocity.GetSafeNormal();
+		Normal = -Relative.GetSafeNormal();
 	}
-	const float Restitution = Profile->BallBounceRestitution;
-	const float IntoBody = FVector::DotProduct(Velocity, Normal);
-	FVector NewVelocity = Velocity;
-	if (IntoBody < 0.f)
+	const float IntoBody = FVector::DotProduct(Relative, Normal);
+	if (IntoBody >= 0.f)
 	{
-		NewVelocity = (Velocity - IntoBody * Normal) * Restitution - IntoBody * Restitution * Normal;
+		return false; // Already leaving the body (or at rest against it).
 	}
+	const float Restitution = GetActiveDiveProfile()->BallBounceRestitution;
+	const FVector NewVelocity = BodyVelocity + (Relative - IntoBody * Normal) * Restitution - IntoBody * Restitution * Normal;
 	Ball->SetPhysicsLinearVelocity(NewVelocity);
 	Ball->WakeAllRigidBodies();
-
-	bTouchedBall = true;
-	UE_LOG(LogWBPlayerDive, Verbose, TEXT("%s touched %s (%.0f -> %.0f cm/s)."), *GetNameSafe(Character), *GetNameSafe(Ball->GetOwner()), Velocity.Size(), NewVelocity.Size());
-	OnDiveBallTouched.Broadcast(Ball->GetOwner());
+	return true;
 }
 
 void UWB_PlayerDiveComponent::Touchdown()
@@ -495,8 +526,10 @@ void UWB_PlayerDiveComponent::Touchdown()
 	}
 	Phase = EWB_DivePhase::Land;
 	PhaseElapsed = 0.f;
-	LandDuration = AnimLengthOr(Profile->LandAnim, Profile->LandFallbackDuration) + (bTouchedBall ? 0.f : Profile->MissStunDuration);
-	GetUpDuration = FMath::Max(AnimLengthOr(Profile->GetUpAnim, Profile->GetUpFallbackDuration), 0.01f);
+	// The landing and the get-up play at RecoveryPlayRate (ABP_SoccerPlayer uses the same rate): their phases are that much shorter.
+	const float RecoveryRate = FMath::Max(Profile->RecoveryPlayRate, 0.1f);
+	LandDuration = AnimLengthOr(Profile->LandAnim, Profile->LandFallbackDuration) / RecoveryRate + (bTouchedBall ? 0.f : Profile->MissStunDuration);
+	GetUpDuration = FMath::Max(AnimLengthOr(Profile->GetUpAnim, Profile->GetUpFallbackDuration) / RecoveryRate, 0.01f);
 	OnDiveLanded.Broadcast(bTouchedBall);
 }
 
@@ -538,12 +571,162 @@ void UWB_PlayerDiveComponent::EndDive(bool bReturnToFree)
 	OnDiveFinished.Broadcast(bTouchedBall);
 }
 
+bool UWB_PlayerDiveComponent::TryStartDefense()
+{
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (Phase != EWB_DivePhase::None || bDefending || !PlayerState || !Character)
+	{
+		return false;
+	}
+	if (!PlayerState->TryEnterState(WBTags::Player_State_Defending))
+	{
+		return false;
+	}
+	bDefending = true;
+	// The stance keeps the direction the player is facing, no turn toward the ball (user decision 2026-11-17). It stays locked after:
+	// the player moves in straight lines along these axes.
+	DefenseYaw = Character->GetActorRotation().Yaw;
+
+	// The component holds the facing itself; the moves come in the player's axes (AddDefenseMoveInput).
+	bUseControllerRotationYawBefore = Character->bUseControllerRotationYaw;
+	Character->bUseControllerRotationYaw = false;
+	if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+	{
+		bOrientRotationToMovementBefore = Movement->bOrientRotationToMovement;
+		bUseControllerDesiredRotationBefore = Movement->bUseControllerDesiredRotation;
+		Movement->bOrientRotationToMovement = false;
+		Movement->bUseControllerDesiredRotation = false;
+	}
+	SetComponentTickEnabled(true);
+	return true;
+}
+
+void UWB_PlayerDiveComponent::StopDefense()
+{
+	if (bDefending)
+	{
+		EndDefense(true);
+	}
+}
+
+void UWB_PlayerDiveComponent::EndDefense(bool bReturnToFree)
+{
+	if (!bDefending)
+	{
+		return;
+	}
+	bDefending = false;
+	SetComponentTickEnabled(false);
+
+	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+	{
+		Character->bUseControllerRotationYaw = bUseControllerRotationYawBefore;
+		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
+		{
+			Movement->bOrientRotationToMovement = bOrientRotationToMovementBefore;
+			Movement->bUseControllerDesiredRotation = bUseControllerDesiredRotationBefore;
+		}
+	}
+	if (bReturnToFree && PlayerState && PlayerState->IsInState(WBTags::Player_State_Defending))
+	{
+		TGuardValue<bool> Guard(bChangingStateItself, true);
+		PlayerState->ChangePlayerState(WBTags::Player_State_Free);
+	}
+}
+
+void UWB_PlayerDiveComponent::AddDefenseMoveInput(float RightAxis, float ForwardAxis)
+{
+	APawn* Pawn = Cast<APawn>(GetOwner());
+	if (!bDefending || !Pawn)
+	{
+		return;
+	}
+	// The player's own axes (yaw only), each turned to the side closest to the camera's axis: D stays "screen right-ish" and W "screen up-ish",
+	// only tilted by the player's angle. Without the flip, a player facing the camera would have inverted controls.
+	const FRotationMatrix Yaw(FRotator(0.f, Pawn->GetActorRotation().Yaw, 0.f));
+	FVector Right = Yaw.GetUnitAxis(EAxis::Y);
+	FVector Forward = Yaw.GetUnitAxis(EAxis::X);
+	if (const APlayerCameraManager* Camera = UGameplayStatics::GetPlayerCameraManager(this, 0))
+	{
+		const FRotationMatrix CameraYaw(FRotator(0.f, Camera->GetCameraRotation().Yaw, 0.f));
+		if (FVector::DotProduct(Right, CameraYaw.GetUnitAxis(EAxis::Y)) < 0.f)
+		{
+			Right = -Right;
+		}
+		if (FVector::DotProduct(Forward, CameraYaw.GetUnitAxis(EAxis::X)) < 0.f)
+		{
+			Forward = -Forward;
+		}
+	}
+	const float Speed = PlayerState ? PlayerState->GetMoveSpeedMultiplier() : 1.f;
+	Pawn->AddMovementInput(Right, RightAxis * Speed);
+	Pawn->AddMovementInput(Forward, ForwardAxis * Speed * GetActiveDiveProfile()->DefenseForwardSpeedScale);
+}
+
+void UWB_PlayerDiveComponent::TickDefense(float DeltaTime)
+{
+	ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (!Character)
+	{
+		EndDefense(false);
+		return;
+	}
+	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
+
+	// Holds the facing locked at the start of the stance (no ball tracking).
+	UPrimitiveComponent* Ball = FindClosestBall(Character->GetActorLocation());
+	Character->SetActorRotation(FRotator(0.f, DefenseYaw, 0.f));
+
+	const FVector Forward = Character->GetActorForwardVector().GetSafeNormal2D();
+
+	// Block: the spread body is a box (width of the X, thickness, capsule height plus the raised hands) facing the ball.
+	if (Ball && Ball->IsSimulatingPhysics())
+	{
+		const float HalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const FVector Center = Character->GetActorLocation() + FVector(0.f, 0.f, Profile->DefenseBlockExtraHeight * 0.5f);
+		const FVector Extent(Profile->DefenseBlockHalfThickness, Profile->DefenseBlockHalfWidth, HalfHeight + Profile->DefenseBlockExtraHeight * 0.5f);
+		const FQuat Facing = FRotator(0.f, Character->GetActorRotation().Yaw, 0.f).Quaternion();
+		const FVector BallCenter = Ball->GetComponentLocation();
+		const FVector Local = Facing.UnrotateVector(BallCenter - Center);
+		const FVector ClosestLocal(FMath::Clamp(Local.X, -Extent.X, Extent.X), FMath::Clamp(Local.Y, -Extent.Y, Extent.Y), FMath::Clamp(Local.Z, -Extent.Z, Extent.Z));
+		FVector Closest = Center + Facing.RotateVector(ClosestLocal);
+		if (FVector::DistSquared(BallCenter, Closest) <= FMath::Square(Ball->Bounds.SphereRadius))
+		{
+			if (Closest.Equals(BallCenter, 1.f))
+			{
+				// Ball center inside the box: push it out through the front or the back face.
+				Closest = BallCenter - Forward * FMath::Sign(Local.X == 0.f ? 1.f : Local.X);
+			}
+			if (BounceBall(Ball, Closest, Character->GetVelocity()))
+			{
+				UE_LOG(LogWBPlayerDive, Verbose, TEXT("%s blocked %s."), *GetNameSafe(Character), *GetNameSafe(Ball->GetOwner()));
+				OnDefenseBallBlocked.Broadcast(Ball->GetOwner());
+			}
+		}
+
+#if ENABLE_DRAW_DEBUG
+		if (bDebugDrawDive)
+		{
+			DrawDebugBox(GetWorld(), Center, Extent, Facing, FColor::Yellow, false, 0.f, 0, 1.f);
+		}
+#endif
+	}
+}
+
 void UWB_PlayerDiveComponent::HandlePlayerStateChanged(FGameplayTag OldState, FGameplayTag NewState)
 {
-	// Another state cut the dive short (hit, goal, Disabled): stop right there, the new state takes over.
-	if (OldState == WBTags::Player_State_Diving && Phase != EWB_DivePhase::None && !bChangingStateItself)
+	if (bChangingStateItself)
+	{
+		return;
+	}
+	// Another state cut the dive or the stance short (hit, goal, Disabled): stop right there, the new state takes over.
+	if (OldState == WBTags::Player_State_Diving && Phase != EWB_DivePhase::None)
 	{
 		EndDive(false);
+	}
+	if (OldState == WBTags::Player_State_Defending && bDefending)
+	{
+		EndDefense(false);
 	}
 }
 

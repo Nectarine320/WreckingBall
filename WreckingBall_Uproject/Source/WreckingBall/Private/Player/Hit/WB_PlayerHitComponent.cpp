@@ -152,6 +152,11 @@ bool UWB_PlayerHitComponent::ReceiveThrownHit(AActor* Source, FVector ImpactVelo
 	return true;
 }
 
+bool UWB_PlayerHitComponent::CanBeDashedBy(AActor* Dasher) const
+{
+	return CanBeHitBy(Dasher) && PlayerState->CanEnterState(WBTags::Player_State_Down);
+}
+
 bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 {
 	if (!CanBeHitBy(Dasher))

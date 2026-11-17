@@ -1,6 +1,7 @@
 #include "AI/WB_SoccerAIController_Base.h"
 
 #include "AI/WB_SoccerAIProfile.h"
+#include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -262,22 +263,183 @@ void AWB_SoccerAIController_Base::TickChaseCarrier(ACharacter* Me, float DeltaSe
 		return;
 	}
 
-	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	const FVector ToCarrier = Carrier->GetActorLocation() - Me->GetActorLocation();
-	const float Distance = ToCarrier.Size2D();
-	const double Now = GetWorld()->GetTimeSeconds();
-
-	if (Distance >= Profile->DashMinDistance && Distance <= Profile->DashMaxDistance && Now >= NextDashTime)
+	FVector AimPoint;
+	if (EvaluateDash(const_cast<APawn*>(Carrier), AimPoint))
 	{
-		// Dash along the actor forward: face the carrier with a random error, so some Dashes miss.
-		NextDashTime = Now + Profile->DashCooldown;
+		// Dash along the actor forward: face the predicted spot with a random error, so some Dashes miss.
+		const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+		NextDashTime = GetWorld()->GetTimeSeconds() + Profile->DashCooldown;
 		const float Jitter = FMath::FRandRange(-Profile->DashAngleJitter, Profile->DashAngleJitter);
 		Commands->StopMoving();
-		Commands->SetFacingDirection(ToCarrier.GetSafeNormal2D().RotateAngleAxis(Jitter, FVector::UpVector));
+		Commands->SetFacingDirection((AimPoint - Me->GetActorLocation()).GetSafeNormal2D().RotateAngleAxis(Jitter, FVector::UpVector));
 		Commands->Dash();
 		return;
 	}
-	MoveTowardLocation(Me, Carrier->GetActorLocation());
+	// Too close for the minimum run-up: step back to make room for the Dash.
+	if (DashBlockReason == TEXT("Too close"))
+	{
+		Commands->MoveInWorldDirection(Me->GetActorLocation() - AimPoint);
+		return;
+	}
+	// Not favorable yet: keep chasing, toward where the carrier is going (the path finds a way around a blocked line).
+	MoveTowardLocation(Me, AimPoint);
+}
+
+bool AWB_SoccerAIController_Base::EvaluateDash(APawn* Target, FVector& AimPoint)
+{
+	static const FName Ready(TEXT("Ready"));
+	static const FName NoTarget(TEXT("No target"));
+	static const FName Cooldown(TEXT("Cooldown"));
+	static const FName CannotDash(TEXT("Cannot Dash (state)"));
+	static const FName Exhausted(TEXT("Exhausted"));
+	static const FName LowEnergy(TEXT("Low energy"));
+	static const FName Protected(TEXT("Target protected"));
+	static const FName OutOfReach(TEXT("Out of reach"));
+	static const FName TooClose(TEXT("Too close"));
+
+	const ACharacter* Me = GetCharacter();
+	AimPoint = Target ? Target->GetActorLocation() : FVector::ZeroVector;
+	LastDashAimPoint = AimPoint;
+	if (!Me || !Target || !Commands || !PlayerStateComp)
+	{
+		DashBlockReason = NoTarget;
+		return false;
+	}
+
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	const FVector MyLocation = Me->GetActorLocation();
+
+	// Lead the target first: the chase uses the predicted spot even when no Dash is possible.
+	const float DashDistance = Commands->GetDashDistance();
+	const float DashSpeed = DashDistance / Commands->GetDashDuration();
+	const ACharacter* TargetCharacter = Cast<ACharacter>(Target);
+	const float Radii = Me->GetCapsuleComponent()->GetScaledCapsuleRadius()
+		+ (TargetCharacter ? TargetCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius() : 0.f);
+	const FVector TargetVelocity = Target->GetVelocity() * FVector(1.f, 1.f, 0.f);
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		// Travel time until the capsules touch, refined once with the predicted spot.
+		const float Travel = FMath::Max(0.f, FVector::Dist2D(MyLocation, AimPoint) - Radii) / DashSpeed;
+		AimPoint = Target->GetActorLocation() + TargetVelocity * Travel * Profile->DashLeadFactor;
+	}
+	LastDashAimPoint = AimPoint;
+
+	// Own side: cooldown, state (Free, empty hands), energy.
+	if (GetWorld()->GetTimeSeconds() < NextDashTime)
+	{
+		DashBlockReason = Cooldown;
+		return false;
+	}
+	if (!PlayerStateComp->CanEnterState(WBTags::Player_State_Dashing))
+	{
+		DashBlockReason = CannotDash;
+		return false;
+	}
+	if (Commands->IsExhausted())
+	{
+		DashBlockReason = Exhausted;
+		return false;
+	}
+	if (Commands->GetEnergyPercent() < Commands->GetDashEnergyCost() + Profile->DashEnergyReserve)
+	{
+		DashBlockReason = LowEnergy;
+		return false;
+	}
+
+	// Target side: Down, post-Down grace, hit cooldown, friendly fire.
+	const UWB_PlayerHitComponent* TargetHit = Target->FindComponentByClass<UWB_PlayerHitComponent>();
+	if (TargetHit && !TargetHit->CanBeDashedBy(const_cast<ACharacter*>(Me)))
+	{
+		DashBlockReason = Protected;
+		return false;
+	}
+
+	// Reach: the capsules must touch before the Dash ends, after the minimum run-up.
+	const float Distance = FVector::Dist2D(MyLocation, AimPoint);
+	if (Distance > (DashDistance + Radii) * Profile->DashReachRatio)
+	{
+		DashBlockReason = OutOfReach;
+		return false;
+	}
+	if (Distance < Commands->GetDashMinRunUp() + Radii + Profile->DashRunUpMargin)
+	{
+		DashBlockReason = TooClose;
+		return false;
+	}
+
+	if (IsDashLineBlocked(Me, Target, AimPoint, FMath::Min(Distance, DashDistance)))
+	{
+		return false;
+	}
+	DashBlockReason = Ready;
+	return true;
+}
+
+bool AWB_SoccerAIController_Base::IsDashLineBlocked(const ACharacter* Me, const APawn* Target, const FVector& AimPoint, float Length)
+{
+	static const FName Blocked(TEXT("Line blocked"));
+	static const FName Teammate(TEXT("Teammate in line"));
+
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (!Profile->bDashNeedsClearLine && !Profile->bDashAvoidTeammates)
+	{
+		return false;
+	}
+
+	UWorld* World = GetWorld();
+	UCapsuleComponent* Capsule = Me->GetCapsuleComponent();
+	const FVector Start = Me->GetActorLocation();
+	const FVector End = Start + (AimPoint - Start).GetSafeNormal2D() * Length;
+
+	// Same shape and collision as the Dash (capsule sweep of SetActorLocation). Pushed things are ignored and the sweep goes on.
+	FComponentQueryParams Params(SCENE_QUERY_STAT(WBSoccerBotDashLine), Me);
+	Params.AddIgnoredActor(Target);
+	for (int32 Step = 0; Step < 4; ++Step)
+	{
+		TArray<FHitResult> Hits;
+		World->ComponentSweepMulti(Hits, Capsule, Start, End, Capsule->GetComponentQuat(), Params);
+		const FHitResult* Block = Hits.FindByPredicate([](const FHitResult& Hit) { return Hit.bBlockingHit && !Hit.bStartPenetrating; });
+		if (!Block)
+		{
+			return false;
+		}
+		AActor* HitActor = Block->GetActor();
+
+		// Floor or slope: not in the way.
+		if (Block->ImpactNormal.Z > 0.7f)
+		{
+			Params.AddIgnoredActor(HitActor);
+			continue;
+		}
+
+		// Another player: an opponent is a bonus, a teammate the Dash would knock Down is not.
+		if (const UWB_PlayerHitComponent* OtherHit = HitActor ? HitActor->FindComponentByClass<UWB_PlayerHitComponent>() : nullptr)
+		{
+			if (Profile->bDashAvoidTeammates && !IsOpponent(Cast<APawn>(HitActor)) && OtherHit->CanBeDashedBy(const_cast<ACharacter*>(Me)))
+			{
+				DashBlockReason = Teammate;
+				return true;
+			}
+			Params.AddIgnoredActor(HitActor);
+			continue;
+		}
+
+		// Ball and physics objects are pushed by the Dash.
+		const UPrimitiveComponent* HitComponent = Block->GetComponent();
+		if (HitComponent && HitComponent->IsSimulatingPhysics())
+		{
+			Params.AddIgnoredActor(HitActor);
+			continue;
+		}
+
+		if (Profile->bDashNeedsClearLine)
+		{
+			DashBlockReason = Blocked;
+			return true;
+		}
+		Params.AddIgnoredActor(HitActor);
+	}
+	return false;
 }
 
 void AWB_SoccerAIController_Base::TickSupport(ACharacter* Me, float DeltaSeconds)
@@ -452,7 +614,18 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 	{
 		DrawDebugLine(World, PathPoints[i - 1], PathPoints[i], i == PathIndex ? FColor::Yellow : FColor::Cyan, false, -1.f, 0, 3.f);
 	}
-	const FString Text = FString::Printf(TEXT("Bot T%d %s"), GetTeamIndex(), *UEnum::GetDisplayValueAsText(CurrentIntent).ToString());
+	FString Text = FString::Printf(TEXT("Bot T%d %s"), GetTeamIndex(), *UEnum::GetDisplayValueAsText(CurrentIntent).ToString());
+	if (CurrentIntent == EWB_SoccerAIIntent::ChaseCarrier)
+	{
+		// Dash check: reason, predicted spot of the carrier and real reach.
+		Text += FString::Printf(TEXT("\nDash: %s"), *DashBlockReason.ToString());
+		DrawDebugSphere(World, LastDashAimPoint, 30.f, 8, DashBlockReason == TEXT("Ready") ? FColor::Green : FColor::Red, false, -1.f, 0, 2.f);
+		DrawDebugLine(World, Me->GetActorLocation(), LastDashAimPoint, FColor::Magenta, false, -1.f, 0, 1.f);
+		if (Commands)
+		{
+			DrawDebugCircle(World, Me->GetActorLocation(), Commands->GetDashDistance(), 32, FColor::Magenta, false, -1.f, 0, 1.f, FVector::ForwardVector, FVector::RightVector, false);
+		}
+	}
 	DrawDebugString(World, Me->GetActorLocation() + FVector(0.f, 0.f, 140.f), Text, nullptr, FColor::Orange, 0.f, true);
 
 	if (const UWB_TeamGoalComponent* Goal = GetGoalToAttack())

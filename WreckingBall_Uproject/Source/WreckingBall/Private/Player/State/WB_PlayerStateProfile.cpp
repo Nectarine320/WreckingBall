@@ -19,7 +19,7 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 	// Transition table of the Phase C quote (updated 2026-11-15 with Sulking). Hand rules are in StatesRequiringEmptyHands / StatesRequiringHolding.
 	AllowedTransitions.Add(Player_State_Free, MakeContainer({
 		Player_State_Dashing, Player_State_Kicking, Player_State_Throwing, Player_State_Stunned,
-		Player_State_Down, Player_State_Disabled, Player_State_Celebrating, Player_State_Sulking, Player_State_Diving }));
+		Player_State_Down, Player_State_Disabled, Player_State_Celebrating, Player_State_Sulking, Player_State_Diving, Player_State_Defending }));
 
 	// An action in progress is cancelled by a goal (Celebrating / Sulking).
 	const FGameplayTagContainer FromAction = MakeContainer({
@@ -37,6 +37,8 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 	AllowedTransitions.Add(Player_State_Recoiling, FromAction);
 	// Defensive dive: same exits as an action (a hit or a goal cuts it short; the dive component goes back to Free after the get-up).
 	AllowedTransitions.Add(Player_State_Diving, FromAction);
+	// Defense stance: same exits (released button: Free; Dash hit: Down / Stunned; goal; Disabled).
+	AllowedTransitions.Add(Player_State_Defending, FromAction);
 
 	AllowedTransitions.Add(Player_State_Stunned, MakeContainer({ Player_State_Free, Player_State_Down, Player_State_Disabled, Player_State_Celebrating }));
 	AllowedTransitions.Add(Player_State_Down, MakeContainer({ Player_State_Free, Player_State_Disabled, Player_State_Celebrating }));
@@ -46,11 +48,12 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 
 	StatesRequiringEmptyHands.AddTag(Player_State_Dashing);
 	StatesRequiringEmptyHands.AddTag(Player_State_Diving);
+	StatesRequiringEmptyHands.AddTag(Player_State_Defending);
 	StatesRequiringHolding.AddTag(Player_State_Kicking);
 	StatesRequiringHolding.AddTag(Player_State_Throwing);
 
 	// Stunned blocks movement too (user decision 2026-11-16): a stunned player sits on the ground.
 	// Recoiling and Diving block both too: the bounce and the dive are scripted.
 	StatesBlockingMovement = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned, Player_State_Recoiling, Player_State_Diving });
-	StatesBlockingSprint = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned, Player_State_Celebrating, Player_State_Recoiling, Player_State_Diving });
+	StatesBlockingSprint = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned, Player_State_Celebrating, Player_State_Recoiling, Player_State_Diving, Player_State_Defending });
 }

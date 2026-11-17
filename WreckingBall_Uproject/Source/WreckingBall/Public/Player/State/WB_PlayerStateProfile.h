@@ -21,7 +21,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State", ForceInlineRow))
 	TMap<FGameplayTag, FGameplayTagContainer> AllowedTransitions;
 
-	/** States that can only be entered with empty hands (Player.Holding.None). Default: Dashing, Diving (no Dash or dive while holding something). */
+	/** States that can only be entered with empty hands (Player.Holding.None). Default: Dashing, Diving, Defending (no Dash, dive or defense while holding something). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesRequiringEmptyHands;
 
@@ -33,7 +33,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesBlockingMovement;
 
-	/** States where the sprint input has no effect (a sprint in progress is stopped by the Blueprint). Default: Disabled, Down, Stunned, Celebrating, Recoiling, Diving. */
+	/** States where the sprint input has no effect (a sprint in progress is stopped by the Blueprint). Default: Disabled, Down, Stunned, Celebrating, Recoiling, Diving, Defending. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesBlockingSprint;
 
@@ -64,4 +64,8 @@ public:
 	/** Move speed multiplier at full kick / throw charge while Kicking or Throwing. The speed goes from 1 (no charge) to this value (full charge). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
 	float ActionMoveSpeedMultiplier = 0.5f;
+
+	/** Move speed multiplier in the defense stance (Defending): the side steps (A/D) go at this share of the walk speed. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
+	float DefenseMoveSpeedMultiplier = 0.7f;
 };

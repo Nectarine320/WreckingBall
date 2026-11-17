@@ -50,6 +50,16 @@ Dossiers `Public/AI/` et `Private/AI/` (+ `Public/Player/Command/`, `Public/Matc
 - Ajout imprévu : BP_SoccerCamera parcourt `Players` du GameMode au lieu de `GetPlayerPawn(i)`, qui renvoie None pour un joueur piloté par un bot.
 - Le volume de NavMesh couvre seulement la salle principale (41 × 41 m).
 
+## Dash favorable (2026-11-17)
+Le bot ne dash sur le porteur que si toutes ces conditions sont réunies (`EvaluateDash`, raison affichée avec `bDrawDebug`) :
+- **Soi** : cooldown fini, `CanEnterState(Dashing)`, pas épuisé (`WalkType` ≠ Exhausted), énergie ≥ coût du Dash + `DashEnergyReserve`.
+- **Cible touchable** : `UWB_PlayerHitComponent::CanBeDashedBy` (mêmes règles que `ReceiveDashHit` : grâce, cooldown, friendly fire, table d'états).
+- **Anticipation** : vise `position + vitesse × temps de trajet du Dash × DashLeadFactor` ; cette position doit être dans `(DashScanDistance + rayons des capsules) × DashReachRatio` et au-delà de `DashMinRunUpDistancePlayer + rayons + DashRunUpMargin`.
+- **Ligne dégagée** : sweep de la capsule ; bloque sur un mur ou un objet non simulé, ou sur un coéquipier qui serait mis Down. Ballon et objets physiques ignorés.
+- Sinon : poursuit vers la position anticipée ; trop près : recule.
+- Le Dash réel fait 3,5 m (`DashScanDistance`) : l'ancienne fenêtre 3-6 m (`DashMinDistance` / `DashMaxDistance`) est retirée.
+- Les valeurs du pawn (énergie, Dash) sont lues par nom de variable Blueprint (`UWB_PlayerCommandComponent`, catégorie Readout). À remplacer quand l'énergie passera en C++.
+
 ## Tests (utilisateur)
 - `+` ×2 → 4 joueurs, équipes équilibrées ; `-` → retour à 2.
 - `*` → P2 sans manette devient bot ; `*` à nouveau → il redevient joueur.

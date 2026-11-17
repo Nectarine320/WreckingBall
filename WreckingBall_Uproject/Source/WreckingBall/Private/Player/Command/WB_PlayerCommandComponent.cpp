@@ -4,6 +4,11 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Player/Energy/WB_PlayerActionCostProfile.h"
+#include "Player/State/WB_PlayerStateComponent.h"
+#include "UObject/UnrealType.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogWBPlayerCommand, Log, All);
 
 UWB_PlayerCommandComponent::UWB_PlayerCommandComponent()
 {
@@ -93,4 +98,81 @@ void UWB_PlayerCommandComponent::WorldDirectionToStickAxes(FVector WorldDirectio
 	WorldDirection.Z = 0.f;
 	XAxis = FVector::DotProduct(WorldDirection, Right);
 	YAxis = FVector::DotProduct(WorldDirection, Forward);
+}
+
+bool UWB_PlayerCommandComponent::ReadOwnerNumber(FName Variable, float& OutValue) const
+{
+	const AActor* Owner = GetOwner();
+	const FNumericProperty* Property = Owner ? FindFProperty<FNumericProperty>(Owner->GetClass(), Variable) : nullptr;
+	if (!Property)
+	{
+		if (Owner && !WarnedVariables.Contains(Variable))
+		{
+			WarnedVariables.Add(Variable);
+			UE_LOG(LogWBPlayerCommand, Warning, TEXT("%s: no number variable '%s' on %s (readout of UWB_PlayerCommandComponent)."), *GetName(), *Variable.ToString(), *Owner->GetClass()->GetName());
+		}
+		return false;
+	}
+	const void* Value = Property->ContainerPtrToValuePtr<void>(Owner);
+	OutValue = Property->IsFloatingPoint()
+		? static_cast<float>(Property->GetFloatingPointPropertyValue(Value))
+		: static_cast<float>(Property->GetSignedIntPropertyValue(Value));
+	return true;
+}
+
+float UWB_PlayerCommandComponent::GetEnergyPercent() const
+{
+	float Value = 1.f;
+	return ReadOwnerNumber(EnergyPercentVariable, Value) ? FMath::Clamp(Value, 0.f, 1.f) : 1.f;
+}
+
+bool UWB_PlayerCommandComponent::IsExhausted() const
+{
+	const AActor* Owner = GetOwner();
+	const FProperty* Property = Owner ? FindFProperty<FProperty>(Owner->GetClass(), WalkTypeVariable) : nullptr;
+	if (!Property)
+	{
+		return false;
+	}
+
+	// A Blueprint enum variable is a byte property with an enum; a C++ enum class is an enum property.
+	const UEnum* Enum = nullptr;
+	int64 Value = 0;
+	const void* Data = Property->ContainerPtrToValuePtr<void>(Owner);
+	if (const FByteProperty* ByteProperty = CastField<FByteProperty>(Property))
+	{
+		Enum = ByteProperty->Enum;
+		Value = ByteProperty->GetPropertyValue(Data);
+	}
+	else if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
+	{
+		Enum = EnumProperty->GetEnum();
+		Value = EnumProperty->GetUnderlyingProperty()->GetSignedIntPropertyValue(Data);
+	}
+	return Enum && Enum->GetDisplayNameTextByValue(Value).ToString() == ExhaustedWalkType;
+}
+
+float UWB_PlayerCommandComponent::GetDashEnergyCost() const
+{
+	const AActor* Owner = GetOwner();
+	const UWB_PlayerStateComponent* State = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	return State ? State->GetActiveActionCostProfile()->DashEnergyCost : GetDefault<UWB_PlayerActionCostProfile>()->DashEnergyCost;
+}
+
+float UWB_PlayerCommandComponent::GetDashDistance() const
+{
+	float Value = 350.f;
+	return ReadOwnerNumber(DashDistanceVariable, Value) && Value > 0.f ? Value : 350.f;
+}
+
+float UWB_PlayerCommandComponent::GetDashDuration() const
+{
+	float Value = 0.2f;
+	return ReadOwnerNumber(DashDurationVariable, Value) && Value > 0.f ? Value : 0.2f;
+}
+
+float UWB_PlayerCommandComponent::GetDashMinRunUp() const
+{
+	float Value = 35.f;
+	return ReadOwnerNumber(DashMinRunUpVariable, Value) ? FMath::Max(0.f, Value) : 35.f;
 }

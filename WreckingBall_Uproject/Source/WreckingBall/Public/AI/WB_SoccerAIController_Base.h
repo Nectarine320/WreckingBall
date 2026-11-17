@@ -69,6 +69,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	bool IsOpponent(const APawn* Other) const;
 
+	/** Why the bot did not Dash on the carrier at the last check (Ready when it could). Shown by bDrawDebug. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SoccerAI")
+	FName DashBlockReason;
+
+	/**
+	 * True when a Dash on Target is favorable now: the bot has the energy and may Dash, Target can be knocked Down,
+	 * the predicted position of Target is within the real Dash reach (and past the minimum run-up), and the line is clear
+	 * (no wall, no teammate). AimPoint: predicted position to Dash toward (Target location when false). Sets DashBlockReason.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SoccerAI")
+	bool EvaluateDash(APawn* Target, FVector& AimPoint);
+
 	/** The profile in use: AIProfile, or the UWB_SoccerAIProfile class defaults when it is empty. Never null. */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	const UWB_SoccerAIProfile* GetActiveProfile() const;
@@ -109,6 +121,12 @@ private:
 
 	double NextGrabTime = 0.0;
 	double NextDashTime = 0.0;
+
+	/** Predicted target position of the last EvaluateDash (debug). */
+	FVector LastDashAimPoint = FVector::ZeroVector;
+
+	/** True when the capsule sweep from the bot toward AimPoint (Dash length) meets a wall or a teammate. Sets DashBlockReason. */
+	bool IsDashLineBlocked(const ACharacter* Me, const APawn* Target, const FVector& AimPoint, float Length);
 
 	/** Shot in progress: the bot pressed the kick and releases it after ChargeTarget seconds. */
 	bool bCharging = false;
