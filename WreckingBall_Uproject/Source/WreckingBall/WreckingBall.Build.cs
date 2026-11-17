@@ -19,6 +19,9 @@ public class WreckingBall : ModuleRules
 		// Lot 10: player feedback catalog (Gameplay Tags, project setting).
 		PrivateDependencyModuleNames.AddRange(new string[] { "GameplayTags", "DeveloperSettings" });
 
+		// Footstep dust puff anim notify (UWB_AnimNotify_FootstepPuff spawns a Niagara system).
+		PrivateDependencyModuleNames.Add("Niagara");
+
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		

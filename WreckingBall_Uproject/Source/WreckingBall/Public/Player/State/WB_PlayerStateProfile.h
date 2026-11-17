@@ -53,11 +53,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", Units = "DegreesPerSecond"))
 	float CelebrationTurnRate = 270.f;
 
-	/** Run speed at the start of Celebrating, as a multiplier of the player's default walk speed. The speed ramps up to CelebrationEndSpeedMultiplier over CelebrationDuration. */
+	/** Run speed at the start of Celebrating, as a multiplier of the player's default walk speed. The speed rises fast to CelebrationEndSpeedMultiplier at mid-celebration. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0"))
 	float CelebrationStartSpeedMultiplier = 0.5f;
 
-	/** Run speed at the end of Celebrating, as a multiplier of the player's default walk speed. The ramp accelerates (slow start, fast end). Back to the default walk speed when Celebrating ends. */
+	/** Peak run speed of Celebrating, reached at mid-celebration, as a multiplier of the player's default walk speed. The speed then fades gradually back to the default walk speed by the end of CelebrationDuration. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0"))
 	float CelebrationEndSpeedMultiplier = 2.f;
 
