@@ -22,8 +22,9 @@ public class WreckingBall : ModuleRules
 		// Footstep dust puff anim notify (UWB_AnimNotify_FootstepPuff spawns a Niagara system).
 		PrivateDependencyModuleNames.Add("Niagara");
 
-		// Uncomment if you are using Slate UI
-		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+		// Energy bar widget base class (UWB_EnergyBarWidget_Base derives from UUserWidget).
+		PublicDependencyModuleNames.Add("UMG");
+		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");

@@ -2,6 +2,7 @@
 
 #include "Camera/CameraShakeBase.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/World.h"
 #include "Feedback/WB_FeedbackSettings.h"
 #include "GameFramework/ForceFeedbackEffect.h"
@@ -22,6 +23,48 @@ bool UWB_FeedbackSubsystem::TryConsumeCameraShake(float MinInterval)
 	}
 	LastCameraShakeTime = Now;
 	return true;
+}
+
+void UWB_FeedbackSubsystem::ClearResponsibleWhenAsleep(AActor* Target)
+{
+	if (!IsValid(Target))
+	{
+		return;
+	}
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(Target);
+	for (UPrimitiveComponent* Primitive : Primitives)
+	{
+		if (Primitive && Primitive->IsSimulatingPhysics())
+		{
+			// Sleep events are only sent when the body asks for wake events.
+			Primitive->BodyInstance.bGenerateWakeEvents = true;
+			Primitive->OnComponentSleep.AddUniqueDynamic(this, &UWB_FeedbackSubsystem::HandleComponentSleep);
+		}
+	}
+}
+
+void UWB_FeedbackSubsystem::HandleComponentSleep(UPrimitiveComponent* SleepingComponent, FName BoneName)
+{
+	AActor* Owner = SleepingComponent ? SleepingComponent->GetOwner() : nullptr;
+	if (!IsValid(Owner))
+	{
+		return;
+	}
+	// At rest: nobody threw it anymore. Thrown again later, SetResponsiblePawn marks it and watches it again.
+	Owner->SetInstigator(nullptr);
+	StopWatching(Owner);
+}
+
+void UWB_FeedbackSubsystem::StopWatching(AActor* Target)
+{
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(Target);
+	for (UPrimitiveComponent* Primitive : Primitives)
+	{
+		if (Primitive)
+		{
+			Primitive->OnComponentSleep.RemoveDynamic(this, &UWB_FeedbackSubsystem::HandleComponentSleep);
+		}
+	}
 }
 
 UWB_FeedbackSettings* UWB_FeedbackLibrary::GetFeedbackSettings()
@@ -48,6 +91,16 @@ void UWB_FeedbackLibrary::SetResponsiblePawn(AActor* Target, APawn* Responsible)
 	if (IsValid(Target))
 	{
 		Target->SetInstigator(Responsible);
+		if (Responsible)
+		{
+			if (UWorld* World = Target->GetWorld())
+			{
+				if (UWB_FeedbackSubsystem* Subsystem = World->GetSubsystem<UWB_FeedbackSubsystem>())
+				{
+					Subsystem->ClearResponsibleWhenAsleep(Target);
+				}
+			}
+		}
 	}
 }
 

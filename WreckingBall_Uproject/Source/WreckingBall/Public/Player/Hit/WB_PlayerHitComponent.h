@@ -70,6 +70,19 @@ public:
 	bool ReceiveDashHit(AActor* Dasher, FVector Direction);
 
 	/**
+	 * The Dash of this player hit a surface too heavy to break (HitActor: the surface, HitNormal: the sweep impact normal, DashDirection: the Dash direction,
+	 * RunUpDistance: cm travelled by the Dash before the impact). Only while Dashing, never on another player, and not on a mostly vertical normal (RecoilMaxNormalZ).
+	 * Head-on (angle at or below RecoilStunAngle): Stunned, with the stun durations and animations, and OnHitReceived is broadcast. Side hit: Recoiling for RecoilDuration.
+	 * In both cases the player turns away from the surface and slides along the Dash direction mirrored on the surface, over RunUpDistance x RecoilDistanceRatio
+	 * (at least RecoilMinDistance) during RecoilDuration, with a small hop (RecoilUpSpeed). Returns true when the bounce happened: the Blueprint must then stop
+	 * the Dash timeline and end the pass-through itself. Stunned: true when the bounce also stunned the player.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerHit", meta = (ReturnDisplayName = "Recoiled"))
+	bool ApplyDashRecoil(AActor* HitActor, FVector HitNormal, FVector DashDirection, float RunUpDistance, bool& bStunned);
+
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+	/**
 	 * Speed of a simulated object just before it hit (the Hit event gives the velocity after the bounce).
 	 * Same method as the destructibles: velocity plus or minus NormalImpulse / mass, the larger one is kept. Not simulated: its current velocity.
 	 */
@@ -129,6 +142,22 @@ private:
 
 	/** Down on the ground: back to Free after DownDuration plus the get-up length, and sets GetUpStartTime. */
 	void StartDownGroundTimer();
+
+	/** True while the Dash bounce slides the player (TickComponent moves it). */
+	bool bBouncing = false;
+
+	/** State the bounce put the player in (Recoiling or Stunned): leaving it stops the slide. */
+	FGameplayTag BounceState;
+
+	/** Bounce start location, flat direction, length in cm, elapsed and total time in seconds. */
+	FVector BounceStart = FVector::ZeroVector;
+	FVector BounceDirection = FVector::ZeroVector;
+	float BounceDistance = 0.f;
+	float BounceElapsed = 0.f;
+	float BounceDuration = 0.f;
+
+	/** Ends the bounce slide and turns the tick off. */
+	void StopBounce();
 
 	/** Toggles the grace blink overlay (GraceBlinkInterval). */
 	FTimerHandle GraceBlinkTimer;

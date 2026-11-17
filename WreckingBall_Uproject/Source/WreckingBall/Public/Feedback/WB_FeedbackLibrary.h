@@ -8,6 +8,7 @@
 
 class APawn;
 class UWB_FeedbackSettings;
+class UPrimitiveComponent;
 
 /** Keeps the state shared by every feedback request of a world (camera shake rate limit). */
 UCLASS()
@@ -19,7 +20,20 @@ public:
 	/** True if a camera shake may play now (at least MinInterval seconds since the last one); records it when true. */
 	bool TryConsumeCameraShake(float MinInterval);
 
+	/**
+	 * Watches the simulated components of Target: when the object falls asleep (comes to rest), its responsible player (instigator) is cleared,
+	 * so an object thrown long ago and later pushed by something else does not count as thrown anymore.
+	 */
+	void ClearResponsibleWhenAsleep(AActor* Target);
+
 private:
+	/** A watched component fell asleep: clears its owner's instigator and stops watching that owner. */
+	UFUNCTION()
+	void HandleComponentSleep(UPrimitiveComponent* SleepingComponent, FName BoneName);
+
+	/** Stops listening to the sleep events of every primitive component of Target. */
+	void StopWatching(AActor* Target);
+
 	double LastCameraShakeTime = -1.0e9;
 };
 
@@ -44,7 +58,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Feedback")
 	static APawn* GetResponsiblePawn(AActor* Source);
 
-	/** Marks Responsible as the player responsible for Target (sets its instigator). Call it when a player throws, kicks or dashes into an object. Responsible defaults to self in a pawn. */
+	/** Marks Responsible as the player responsible for Target (sets its instigator). Call it when a player throws, kicks or dashes into an object. Responsible defaults to self in a pawn. The mark is cleared when the object falls asleep (comes to rest). */
 	UFUNCTION(BlueprintCallable, Category = "Feedback", meta = (DefaultToSelf = "Responsible"))
 	static void SetResponsiblePawn(AActor* Target, APawn* Responsible);
 

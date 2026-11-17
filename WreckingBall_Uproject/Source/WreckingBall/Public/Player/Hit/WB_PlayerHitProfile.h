@@ -73,6 +73,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Drop", meta = (ClampMin = "0", ClampMax = "180", Units = "Degrees"))
 	float DropRandomYaw = 45.f;
 
+	/** Bounce distance as a fraction of the distance the Dash travelled before the impact (0.75: a 3 m Dash bounces back 2.25 m). The bounce mirrors the Dash on the surface. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", ClampMax = "2"))
+	float RecoilDistanceRatio = 0.75f;
+
+	/** Shortest bounce in cm, used when the Dash hit the surface almost right away (little run-up). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", Units = "Centimeters"))
+	float RecoilMinDistance = 50.f;
+
+	/** Upward speed in cm/s of the Dash bounce: a small hop so the bounce does not drag on the floor. 0: stays on the ground. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", ClampMax = "800", Units = "CentimetersPerSecond"))
+	float RecoilUpSpeed = 150.f;
+
+	/** Seconds the bounce slides (fast, slowing down at the end). Also how long the player stays in Recoiling (no action, no movement) after a side bounce, then back to Free. A head-on bounce stuns instead (StunDuration). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", Units = "Seconds"))
+	float RecoilDuration = 0.4f;
+
+	/** Head-on limit in degrees, measured flat between the Dash direction and the surface (inverse of its normal). At or below: the bounce also stuns the player. Above: side bounce, Recoiling only. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", ClampMax = "90", Units = "Degrees"))
+	float RecoilStunAngle = 20.f;
+
+	/** Surfaces whose normal has a vertical part above this value (0..1) give no bounce: floor, ceiling, top of an edge. Keeps the Dash from launching the player up or down. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", ClampMax = "1"))
+	float RecoilMaxNormalZ = 0.7f;
+
+	/** Full-body bounce animation played by the AnimBP while Recoiling (AS_Dash_Recoil). Keep it about as long as RecoilDuration. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil")
+	TObjectPtr<UAnimSequenceBase> RecoilAnim;
+
 	/** Played when the player becomes Stunned (AS_Stunned_Enter). Only its length is read here: the Enter phase lasts this long. Empty: no Enter phase. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Animation")
 	TObjectPtr<UAnimSequenceBase> StunEnterAnim;
