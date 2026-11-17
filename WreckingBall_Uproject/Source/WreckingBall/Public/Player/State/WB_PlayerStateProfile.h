@@ -21,7 +21,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State", ForceInlineRow))
 	TMap<FGameplayTag, FGameplayTagContainer> AllowedTransitions;
 
-	/** States that can only be entered with empty hands (Player.Holding.None). Default: Dashing (no Dash while holding something). */
+	/** States that can only be entered with empty hands (Player.Holding.None). Default: Dashing, Diving (no Dash or dive while holding something). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesRequiringEmptyHands;
 
@@ -29,11 +29,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesRequiringHolding;
 
-	/** States where the move and look inputs have no effect. Default: Disabled, Down, Stunned, Recoiling. */
+	/** States where the move and look inputs have no effect. Default: Disabled, Down, Stunned, Recoiling, Diving. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesBlockingMovement;
 
-	/** States where the sprint input has no effect (a sprint in progress is stopped by the Blueprint). Default: Disabled, Down, Stunned, Celebrating, Recoiling. */
+	/** States where the sprint input has no effect (a sprint in progress is stopped by the Blueprint). Default: Disabled, Down, Stunned, Celebrating, Recoiling, Diving. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesBlockingSprint;
 

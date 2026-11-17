@@ -25,7 +25,12 @@ public class WreckingBall : ModuleRules
 		// Energy bar widget base class (UWB_EnergyBarWidget_Base derives from UUserWidget).
 		PublicDependencyModuleNames.Add("UMG");
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
-		
+
+		// Soccer bots: AWB_SoccerAIController_Base derives from AAIController (public header), NavMesh paths,
+		// and the input device mapper to tell which local players have a gamepad.
+		PublicDependencyModuleNames.AddRange(new string[] { "AIModule", "GameplayTasks" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "NavigationSystem", "ApplicationCore" });
+
 		// Uncomment if you are using online features
 		// PrivateDependencyModuleNames.Add("OnlineSubsystem");
 

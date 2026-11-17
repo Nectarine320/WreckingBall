@@ -6,6 +6,7 @@
 #include "WB_PlayerStateComponent.generated.h"
 
 class UWB_PlayerStateProfile;
+class UWB_PlayerActionCostProfile;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnPlayerStateChanged, FGameplayTag, OldState, FGameplayTag, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnHoldingChanged, FGameplayTag, OldHolding, FGameplayTag, NewHolding);
@@ -35,6 +36,10 @@ public:
 	/** State rules and durations (DA_PlayerState_Default). Empty: the class defaults of UWB_PlayerStateProfile are used (same table as the quote). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState")
 	TObjectPtr<UWB_PlayerStateProfile> PlayerStateProfile;
+
+	/** Energy cost of the player actions (DA_PlayerActionCost_Default). Empty: the class defaults of UWB_PlayerActionCostProfile are used. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState")
+	TObjectPtr<UWB_PlayerActionCostProfile> ActionCostProfile;
 
 	/** Called after CurrentState changed. Bind it instead of reading CurrentState every frame (HUD, AnimBP). */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerState")
@@ -137,6 +142,10 @@ public:
 	/** The profile in use: PlayerStateProfile, or the UWB_PlayerStateProfile class defaults when it is empty. Never null. */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
 	const UWB_PlayerStateProfile* GetActiveProfile() const;
+
+	/** The action cost profile in use: ActionCostProfile, or the UWB_PlayerActionCostProfile class defaults when it is empty. Never null. */
+	UFUNCTION(BlueprintPure, Category = "PlayerState")
+	const UWB_PlayerActionCostProfile* GetActiveActionCostProfile() const;
 
 	/** Turns the debug text above the player on or off during play. */
 	UFUNCTION(BlueprintCallable, Category = "Debug")

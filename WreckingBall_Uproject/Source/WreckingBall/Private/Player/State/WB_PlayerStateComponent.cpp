@@ -7,6 +7,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
+#include "Player/Energy/WB_PlayerActionCostProfile.h"
 #include "Player/Hit/WB_PlayerHitComponent.h"
 #include "Player/State/WB_PlayerStateProfile.h"
 #include "Player/State/WB_PlayerStateTags.h"
@@ -72,6 +73,11 @@ void UWB_PlayerStateComponent::ApplyWalkSpeedMultiplier(float Multiplier) const
 const UWB_PlayerStateProfile* UWB_PlayerStateComponent::GetActiveProfile() const
 {
 	return PlayerStateProfile ? PlayerStateProfile.Get() : GetDefault<UWB_PlayerStateProfile>();
+}
+
+const UWB_PlayerActionCostProfile* UWB_PlayerStateComponent::GetActiveActionCostProfile() const
+{
+	return ActionCostProfile ? ActionCostProfile.Get() : GetDefault<UWB_PlayerActionCostProfile>();
 }
 
 bool UWB_PlayerStateComponent::CanEnterState(FGameplayTag NewState) const

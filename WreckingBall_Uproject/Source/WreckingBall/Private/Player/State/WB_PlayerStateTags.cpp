@@ -10,6 +10,7 @@ namespace WBTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Player_State_Stunned, "Player.State.Stunned", "Hit by a thrown object: slowed down, no action, no fall (step 10).");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Player_State_Down, "Player.State.Down", "Hit by a Dash: on the ground, no movement until the player gets up (step 10).");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Player_State_Recoiling, "Player.State.Recoiling", "Bounced back by a Dash into a surface too heavy to break (lot 10.3): short, no action, no movement, then Free.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Player_State_Diving, "Player.State.Diving", "Defensive dive toward a ball kicked by the other team (UWB_PlayerDiveComponent): scripted jump, landing and get-up, no control. Empty hands only.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Player_State_Disabled, "Player.State.Disabled", "No input has any effect (3-2-1, between rounds, end of match). Set and cleared by BP_SoccerGamemode only.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Player_State_Celebrating, "Player.State.Celebrating", "The scoring team after a goal: runs at full speed, only the direction is controlled, no action.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Player_State_Sulking, "Player.State.Sulking", "The team that conceded a goal: moves normally, no action (Dash, Grab, Kick, Throw), sulking emote.");
