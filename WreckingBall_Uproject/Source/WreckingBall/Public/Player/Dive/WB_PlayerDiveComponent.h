@@ -189,6 +189,9 @@ private:
 	float CurrentTiltAlpha = 0.f;
 	float CurrentBodyOffset = 0.f;
 
+	/** Yaw in degrees added to the mesh at full tilt so it lies on its side (bLieOnSide), chosen at takeoff. 0 when off. */
+	float SideYaw = 0.f;
+
 	/** Capsule response to pawns before the dive (the dive passes through the other players). */
 	TEnumAsByte<ECollisionResponse> PawnResponseBefore = ECR_Block;
 

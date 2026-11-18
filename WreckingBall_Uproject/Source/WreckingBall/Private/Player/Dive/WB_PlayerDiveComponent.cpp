@@ -149,6 +149,15 @@ bool UWB_PlayerDiveComponent::TryStartDive()
 	const FVector Facing = ToBall.IsNearlyZero() ? JumpDirection : ToBall;
 	Character->SetActorRotation(FRotator(0.f, Facing.Rotation().Yaw, 0.f));
 
+	// Lie on the side (user request 2026-11-17): the face ends perpendicular to the jump direction, on the side the player already faces.
+	SideYaw = 0.f;
+	if (GetActiveDiveProfile()->bLieOnSide)
+	{
+		const float FacingFromJump = FMath::FindDeltaAngleDegrees(JumpDirection.Rotation().Yaw, Facing.Rotation().Yaw);
+		const float TargetFromJump = FacingFromJump >= 0.f ? 90.f : -90.f;
+		SideYaw = FMath::FindDeltaAngleDegrees(FacingFromJump, TargetFromJump);
+	}
+
 	// Scripted flight: no gravity, no input (Diving blocks the movement inputs).
 	if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
 	{
@@ -347,8 +356,11 @@ void UWB_PlayerDiveComponent::ApplyMeshPose(float TiltAlpha, float BodyOffset)
 	const FQuat CapsuleQuat = Character->GetCapsuleComponent()->GetComponentQuat();
 	const FQuat LocalTilt = CapsuleQuat.Inverse() * WorldTilt * CapsuleQuat;
 
-	const FVector Location = LocalTilt.RotateVector(MeshBaseLocation) + CapsuleQuat.UnrotateVector(FVector(0.f, 0.f, BodyOffset));
-	const FQuat Rotation = LocalTilt * MeshBaseRotation.Quaternion();
+	// Side turn around the capsule axis first (bLieOnSide), so the tilt then lays the body on its side.
+	const FQuat LocalSideYaw(FVector::UpVector, FMath::DegreesToRadians(SideYaw * TiltAlpha));
+
+	const FVector Location = LocalTilt.RotateVector(LocalSideYaw.RotateVector(MeshBaseLocation)) + CapsuleQuat.UnrotateVector(FVector(0.f, 0.f, BodyOffset));
+	const FQuat Rotation = LocalTilt * LocalSideYaw * MeshBaseRotation.Quaternion();
 	Character->GetMesh()->SetRelativeLocationAndRotation(Location, Rotation);
 }
 

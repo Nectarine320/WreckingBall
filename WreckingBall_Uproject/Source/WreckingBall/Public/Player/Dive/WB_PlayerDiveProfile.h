@@ -107,6 +107,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Body", meta = (ClampMin = "0", ClampMax = "90", Units = "Degrees"))
 	float BodyTilt = 80.f;
 
+	/**
+	 * When on, the body lies on its side in the air, face toward the horizon (never toward the floor), like a goalkeeper:
+	 * the mesh turns around the vertical so its face is perpendicular to the jump direction, on the side closest to its facing.
+	 * Off: the body keeps facing the ball, so a forward dive lies face down.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Body")
+	bool bLieOnSide = false;
+
 	/** Seconds the body takes to tilt at takeoff. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Body", meta = (ClampMin = "0.01", Units = "Seconds"))
 	float BodyTiltInTime = 0.2f;

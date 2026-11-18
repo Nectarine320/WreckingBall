@@ -220,6 +220,14 @@ float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
 	{
 		return 0.f;
 	}
+	// Possession penalty (lot 11.2), combined with the other multipliers.
+	const UWB_PlayerStateProfile* HoldingProfile = GetActiveProfile();
+	const float Holding = HoldingProfile && CurrentHolding.MatchesTag(WBTags::Player_Holding_Ball) ? HoldingProfile->HoldingBallMoveSpeedMultiplier : 1.f;
+	return Holding * GetStateMoveSpeedMultiplier();
+}
+
+float UWB_PlayerStateComponent::GetStateMoveSpeedMultiplier() const
+{
 	if (IsInChargedAction())
 	{
 		// Full kick charge: no more forward motion, but the player can still turn (user request 2026-11-16).

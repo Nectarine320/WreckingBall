@@ -65,6 +65,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
 	float ActionMoveSpeedMultiplier = 0.5f;
 
+	/** Move speed multiplier while holding the ball (possession penalty, so the others can catch the carrier). 0.9 = 10 % slower. 1 = no penalty. Never makes the player drop the ball. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
+	float HoldingBallMoveSpeedMultiplier = 0.9f;
+
 	/**
 	 * Shape of the speed rise of Celebrating, from the start to the peak at mid-celebration (ease-out: 1 - (1 - t)^this).
 	 * 1 = straight line, 3 = explosive start (default), higher = even faster start.

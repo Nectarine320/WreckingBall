@@ -111,10 +111,17 @@ public:
 	/**
 	 * Scale to apply to the move input: 0 when CanMove is false (Disabled, Down, Stunned by default),
 	 * from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, 1 otherwise (the defense stance speeds are in the dive profile).
+	 * Times HoldingBallMoveSpeedMultiplier of the state profile while holding the ball (possession penalty).
 	 * Scaling the input (not MaxWalkSpeed) keeps the sprint system untouched.
 	 */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
 	float GetMoveSpeedMultiplier() const;
+
+private:
+	/** Part of GetMoveSpeedMultiplier given by the current state alone (kick / throw charge), without the possession penalty. */
+	float GetStateMoveSpeedMultiplier() const;
+
+public:
 
 	/**
 	 * Stick direction in world space for the forced run while Celebrating (call it from RequestMove instead of Add Movement Input).
