@@ -148,7 +148,7 @@ bool UWB_PlayerStateComponent::ChangePlayerState(FGameplayTag NewState)
 	{
 		const UWorld* CurrentWorld = GetWorld();
 		CelebrationStartTime = CurrentWorld ? CurrentWorld->GetTimeSeconds() : 0.0;
-		ApplyWalkSpeedMultiplier(GetActiveProfile()->CelebrationStartSpeedMultiplier); // Profile checked by CanEnterState.
+		ApplyWalkSpeedMultiplier(GetActiveProfile()->EvaluateCelebrationSpeed(0.f)); // Profile checked by CanEnterState.
 	}
 	else if (OldState == WBTags::Player_State_Celebrating)
 	{
@@ -316,8 +316,7 @@ void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
 		return;
 	}
 
-	// Speed curve (user request 2026-11-16): explosive rise from the start to the peak at mid-celebration (ease-out, CelebrationRiseExponent),
-	// then a gradual fade back to the default walk speed at the end (smoothstep), so the end of the state has no speed jump.
+	// Speed curve (user request 2026-11-16, curve since 2026-11-18): CelebrationSpeedCurve of the profile over the celebration progress.
 	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
 	if (!Profile)
 	{
@@ -326,18 +325,7 @@ void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
 	const UWorld* World = GetWorld();
 	const float Elapsed = World ? static_cast<float>(World->GetTimeSeconds() - CelebrationStartTime) : 0.f;
 	const float Alpha = Profile->CelebrationDuration > 0.f ? FMath::Clamp(Elapsed / Profile->CelebrationDuration, 0.f, 1.f) : 1.f;
-	float SpeedMultiplier;
-	if (Alpha <= 0.5f)
-	{
-		const float Rise = Alpha / 0.5f;
-		SpeedMultiplier = FMath::Lerp(Profile->CelebrationStartSpeedMultiplier, Profile->CelebrationEndSpeedMultiplier, 1.f - FMath::Pow(1.f - Rise, Profile->CelebrationRiseExponent));
-	}
-	else
-	{
-		const float Fade = (Alpha - 0.5f) / 0.5f;
-		SpeedMultiplier = FMath::Lerp(Profile->CelebrationEndSpeedMultiplier, 1.f, FMath::SmoothStep(0.f, 1.f, Fade));
-	}
-	ApplyWalkSpeedMultiplier(SpeedMultiplier);
+	ApplyWalkSpeedMultiplier(Profile->EvaluateCelebrationSpeed(Alpha));
 
 	FVector RunDirection = Pawn->GetActorForwardVector().GetSafeNormal2D();
 	if (!CelebrationSteering.IsNearlyZero())

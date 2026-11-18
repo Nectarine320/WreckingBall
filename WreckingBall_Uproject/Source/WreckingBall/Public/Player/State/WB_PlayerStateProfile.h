@@ -72,13 +72,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", Units = "DegreesPerSecond"))
 	float CelebrationTurnRate = 270.f;
 
-	/** Run speed at the start of Celebrating, as a multiplier of the player's default walk speed. The speed rises fast to CelebrationEndSpeedMultiplier at mid-celebration. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0"))
-	float CelebrationStartSpeedMultiplier = 0.5f;
-
-	/** Peak run speed of Celebrating, reached at mid-celebration, as a multiplier of the player's default walk speed. The speed then fades gradually back to the default walk speed by the end of CelebrationDuration. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0"))
-	float CelebrationEndSpeedMultiplier = 2.f;
+	/**
+	 * Run speed of the forced run while Celebrating: X = celebration progress (0 = goal, 1 = end of CelebrationDuration), Y = multiplier of the
+	 * player's default walk speed. Default: 0.5 at the start, explosive rise to the peak 2 at mid-celebration, gradual fade back to 1 at the end.
+	 * End the curve at 1 so the end of the state has no speed jump. Required: an empty curve keeps the default walk speed.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement")
+	FRuntimeFloatCurve CelebrationSpeedCurve;
 
 	/** Move speed multiplier at full kick / throw charge while Kicking or Throwing. The speed goes from 1 (no charge) to this value (full charge). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
@@ -95,10 +95,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement")
 	FRuntimeFloatCurve GrabbedMoveSpeedCurve;
 
-	/**
-	 * Shape of the speed rise of Celebrating, from the start to the peak at mid-celebration (ease-out: 1 - (1 - t)^this).
-	 * 1 = straight line, 3 = explosive start (default), higher = even faster start.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "1"))
-	float CelebrationRiseExponent = 3.f;
+	/** Celebrating run speed multiplier at Progress (0..1 of CelebrationDuration), read from CelebrationSpeedCurve. Empty curve: 1. */
+	float EvaluateCelebrationSpeed(float Progress) const;
 };

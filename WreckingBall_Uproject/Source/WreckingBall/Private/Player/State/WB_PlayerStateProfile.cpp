@@ -11,6 +11,22 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 	DragCurve->AddKey(140.f, 0.55f);
 	DragCurve->AddKey(400.f, 0.35f);
 
+	// Celebration run (same feel as the former formula of 2026-11-16): 0.5 -> peak 2 at mid-celebration (ease-out, start slope of a cubic),
+	// then a smooth fade back to 1 (flat at the peak and at the end).
+	FRichCurve* CelebrationCurve = CelebrationSpeedCurve.GetRichCurve();
+	auto AddUserKey = [CelebrationCurve](float Time, float Value, float Tangent)
+	{
+		const FKeyHandle Key = CelebrationCurve->AddKey(Time, Value);
+		CelebrationCurve->SetKeyInterpMode(Key, RCIM_Cubic);
+		CelebrationCurve->SetKeyTangentMode(Key, RCTM_User);
+		FRichCurveKey& RichKey = CelebrationCurve->GetKey(Key);
+		RichKey.ArriveTangent = Tangent;
+		RichKey.LeaveTangent = Tangent;
+	};
+	AddUserKey(0.f, 0.5f, 9.f);
+	AddUserKey(0.5f, 2.f, 0.f);
+	AddUserKey(1.f, 1.f, 0.f);
+
 	using namespace WBTags;
 
 	auto MakeContainer = [](std::initializer_list<FGameplayTag> Tags)
@@ -63,4 +79,10 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 	// Recoiling and Diving block both too: the bounce and the dive are scripted.
 	StatesBlockingMovement = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned, Player_State_Recoiling, Player_State_Diving });
 	StatesBlockingSprint = MakeContainer({ Player_State_Disabled, Player_State_Down, Player_State_Stunned, Player_State_Celebrating, Player_State_Recoiling, Player_State_Diving, Player_State_Defending });
+}
+
+float UWB_PlayerStateProfile::EvaluateCelebrationSpeed(float Progress) const
+{
+	const FRichCurve* Curve = CelebrationSpeedCurve.GetRichCurveConst();
+	return (Curve && Curve->GetNumKeys() > 0) ? FMath::Max(Curve->Eval(Progress), 0.f) : 1.f;
 }
