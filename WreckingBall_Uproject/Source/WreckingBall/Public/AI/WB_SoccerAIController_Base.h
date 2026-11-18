@@ -41,7 +41,7 @@ class WRECKINGBALL_API AWB_SoccerAIController_Base : public AAIController
 public:
 	AWB_SoccerAIController_Base();
 
-	/** Bot tuning (DA_SoccerAIProfile_Default). Empty: the class defaults of UWB_SoccerAIProfile are used. */
+	/** Bot tuning (DA_SoccerAIProfile_Default). Required: empty, the bot stays idle and a warning is logged. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SoccerAI")
 	TObjectPtr<UWB_SoccerAIProfile> AIProfile;
 
@@ -81,7 +81,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SoccerAI")
 	bool EvaluateDash(APawn* Target, FVector& AimPoint);
 
-	/** The profile in use: AIProfile, or the UWB_SoccerAIProfile class defaults when it is empty. Never null. */
+	/** The bot profile (AIProfile). Null when it is not assigned (the bot then stays idle). */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	const UWB_SoccerAIProfile* GetActiveProfile() const;
 
@@ -135,6 +135,9 @@ private:
 
 	/** Aim offset (yaw) drawn once per shot. */
 	bool bAimJitterDrawn = false;
+
+	/** Missing AIProfile already reported. */
+	bool bWarnedNoProfile = false;
 	float AimJitterYaw = 0.f;
 
 	void TickSeekBall(ACharacter* Me, float DeltaSeconds);

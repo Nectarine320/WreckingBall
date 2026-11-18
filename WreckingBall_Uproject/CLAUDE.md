@@ -26,6 +26,11 @@ Jeu de soccer en multijoueur local, de 2 à 4 joueurs, dans des lieux improvisé
 - Compte aussi le coût : un `.h` modifié oblige à fermer l'éditeur et à recompiler. Regroupe les changements de `.h` d'un même sous-lot en une seule compilation.
 - **Chaque `UPROPERTY` et `UFUNCTION` exposée reçoit un commentaire `/** … */` en anglais** : Unreal en fait l'infobulle dans l'éditeur, comme la Description d'une variable Blueprint.
 - Nommage des classes : préfixe Unreal habituel (`U`, `A`, `F`, `E`) + nom en PascalCase. Une classe qui sert de base à plusieurs enfants prend le suffixe `_Base` (règle du projet, même chose en Blueprint).
+- **Aucune valeur de réglage cachée dans le C++** (décision de l'utilisateur, 2026-11-17) : le but est que l'équipe de design puisse calibrer le jeu en tout temps, sans dépendre d'un programmeur.
+  - Toute valeur qui peut affecter le gameplay ou le feel (vitesses, durées, distances, coûts, seuils, angles, courbes, couleurs d'affichage) vit dans un Data Asset (ou un profil), avec une Description en anglais.
+  - Pas de repli silencieux : si un Data Asset manque, avertissement dans le log et action coupée, pas de `GetDefault<…>()` qui cache le manque.
+  - Un système = un seul endroit pour ses réglages.
+  - Peuvent rester dans le code : les valeurs purement techniques sans effet sur le gameplay (gardes de division, clamps 0..1, constantes mathématiques, tailles de buffers, cadences internes de back-end…).
 - Nouvelle fonctionnalité dans une classe de base partagée : passe par une option booléenne **désactivée par défaut**.
 - Pour les modules Chaos et Geometry Collection (lot 9), ajoute au `Build.cs` les dépendances utiles (`GeometryCollectionEngine`, `Chaos`, `ChaosSolverEngine`, `PhysicsCore`), et seulement celles qui servent vraiment.
 

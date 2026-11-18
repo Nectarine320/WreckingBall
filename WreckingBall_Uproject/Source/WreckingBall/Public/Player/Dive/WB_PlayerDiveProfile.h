@@ -9,7 +9,7 @@ class UMaterialInterface;
 
 /**
  * Tuning of the defensive dive (UWB_PlayerDiveComponent, DA_PlayerDive_Default). Distance, speed and height are balanced often:
- * Docs/Plans/plan-plongeon.md lists every value and what it changes. Energy costs are in UWB_PlayerActionCostProfile.
+ * Docs/Plans/plan-plongeon.md lists every value and what it changes. Energy costs are in UWB_PlayerEnergyProfile.
  */
 UCLASS(BlueprintType)
 class WRECKINGBALL_API UWB_PlayerDiveProfile : public UPrimaryDataAsset
@@ -56,6 +56,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
 	float FreeDiveHeight = 140.f;
 
+	/** Moment of the top of a dive straight along the stick, as a fraction of AirDuration (0.45: a bit before the middle, fast rise and longer fall). A dive aimed at a ball tops where it meets the ball. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0.1", ClampMax = "0.9"))
+	float FreeDivePeakFraction = 0.45f;
+
+	/** Seconds of the takeoff phase when JumpAnim is empty (with an animation, the takeoff lasts its length). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Seconds"))
+	float TakeoffFallbackDuration = 0.2f;
+
+	/** Height in cm above the start floor where the touchdown ground trace begins (highest step the dive can land on). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
+	float LandingTraceUp = 100.f;
+
+	/** Depth in cm below the start floor where the touchdown ground trace ends (deepest drop the dive follows; nothing found: lands at the start height). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Jump", meta = (ClampMin = "0", Units = "Centimeters"))
+	float LandingTraceDown = 200.f;
+
 	// ---- Aim ----
 
 	/** Half angle in degrees of the cone around the stick direction where the dive looks for the ball path (30 = a 60 degree cone). Ball in the cone: the dive goes toward it; outside: straight along the stick. */
@@ -73,6 +89,17 @@ public:
 	/** Latest moment of the jump, as a fraction of AirDuration, where the body may meet the ball (it is falling to the ground after). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Aim", meta = (ClampMin = "0", ClampMax = "1"))
 	float MaxInterceptFraction = 0.85f;
+
+	/** Number of points of the predicted ball path tested when the dive picks its target. More: finer aim, a little more work at takeoff. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Aim", meta = (ClampMin = "2", ClampMax = "128"))
+	int32 PredictionSamples = 24;
+
+	/**
+	 * Weight of the timing when the dive chooses among reachable points: score = degrees from the stick + this x the moment (0..1).
+	 * 10: one more tenth of the jump weighs as much as one degree away from the stick. Higher: earlier interceptions win.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Aim", meta = (ClampMin = "0"))
+	float InterceptTimeWeight = 10.f;
 
 	// ---- Body ----
 
@@ -104,9 +131,24 @@ public:
 
 	// ---- Defense ----
 
-	/** Speed of W/S (forward / back, toward or away from the ball) in the defense stance, as a share of the side-step speed of A/D. */
+	/**
+	 * Speed of the moves toward or away from the faced direction in the defense stance (the part of the stick along the body), as a share of the walk speed.
+	 * The stick stays camera-relative: W is always screen up; this only scales how fast the body goes forward / back. 1: like the normal walk.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", ClampMax = "1"))
-	float DefenseForwardSpeedScale = 0.5f;
+	float DefenseForwardSpeedMultiplier = 1.f;
+
+	/** Speed of the side steps in the defense stance (the part of the stick across the body), as a share of the walk speed. 1: like the normal walk. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", ClampMax = "1"))
+	float DefenseSideSpeedMultiplier = 1.f;
+
+	/** Range in cm around the player when the stance starts: a ball within it makes the player turn once to face it. Farther: no turn, the player keeps its facing. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", Units = "Centimeters"))
+	float DefenseBallTrackRadius = 1200.f;
+
+	/** Turn speed in degrees per second of the single turn toward the ball at the start of the stance. Once facing it, the facing stays locked. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "1", Units = "DegreesPerSecond"))
+	float DefenseTurnSpeed = 720.f;
 
 	/** Half width in cm of the blocking body in the defense stance (arms and legs spread in an X), sideways from the body axis. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive|Defense", meta = (ClampMin = "0", Units = "Centimeters"))

@@ -39,12 +39,13 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDefenseBallBlocked, AActor*, B
  *   predicted path in the stick cone, the dive goes toward that point. Facing the ball, body tilted toward the jump; no control (scripted, like the Dash).
  *   A touch bounces the ball away from the body. Phases: Takeoff, Air (AirDuration), Land (plus MissStunDuration after a miss), GetUp, then Free.
  *   Land and GetUp play at RecoveryPlayRate.
- * - Pressed without moving: defense stance (Player.State.Defending) while the button is held. X pose, keeps the direction the player faces
- *   (no turn toward the ball), and that facing stays locked (straight moves). The move input is read in the player's own axes (AddDefenseMoveInput): A/D side steps, W/S slower forward / back
- *   (DefenseMoveSpeedMultiplier of the state profile, DefenseForwardSpeedScale). The spread body blocks the ball.
+ * - Pressed without moving: defense stance (Player.State.Defending) while the button is held. X pose. A ball within DefenseBallTrackRadius at the start:
+ *   one turn to face it (DefenseTurnSpeed), then the facing stays locked (the ball is not followed). Farther: the player keeps its facing.
+ *   The move input stays camera-relative (AddDefenseMoveInput: W = screen up, D = screen right, straight lines, whatever the facing); the part along the body
+ *   goes at DefenseForwardSpeedMultiplier, the part across it at DefenseSideSpeedMultiplier. The spread body blocks the ball.
  *   Ends on release (StopDefense) or when another state takes over (Dash hit, goal, Disabled).
  * Added to BP_GenericCharacter next to UWB_PlayerStateComponent. The dive energy is handled by the Blueprint from the events
- * (OnDiveStarted, OnDiveLanded, OnDiveFinished) and the costs of UWB_PlayerActionCostProfile. The defense costs nothing.
+ * (OnDiveStarted, OnDiveLanded, OnDiveFinished) and the costs of UWB_PlayerEnergyProfile. The defense costs nothing.
  */
 UCLASS(Blueprintable, ClassGroup = (WreckingBall), meta = (BlueprintSpawnableComponent))
 class WRECKINGBALL_API UWB_PlayerDiveComponent : public UActorComponent
@@ -54,7 +55,7 @@ class WRECKINGBALL_API UWB_PlayerDiveComponent : public UActorComponent
 public:
 	UWB_PlayerDiveComponent();
 
-	/** Dive and defense tuning (DA_PlayerDive_Default). Empty: the class defaults of UWB_PlayerDiveProfile are used (no ball class: no ball aim, no ball block). */
+	/** Dive and defense tuning (DA_PlayerDive_Default). Required: empty, the dive and the defense are refused and a warning is logged. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerDive")
 	TObjectPtr<UWB_PlayerDiveProfile> DiveProfile;
 
@@ -99,8 +100,9 @@ public:
 	bool TryStartDive();
 
 	/**
-	 * Defense stance request (IA_Dive pressed without moving). Enters Defending (state table, empty hands): X pose, keeps the current facing, side steps,
-	 * blocks the ball. Kept until StopDefense (button released) or another state takes over. Returns false when the state is refused. Costs no energy.
+	 * Defense stance request (IA_DefensiveDive pressed without moving). Enters Defending (state table, empty hands): X pose, one turn toward a ball within
+	 * DefenseBallTrackRadius then a locked facing, camera-relative moves, blocks the ball. Kept until StopDefense (button released) or another state takes over.
+	 * Returns false when the state is refused or the profile is missing. Costs no energy.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerDive|Defense", meta = (ReturnDisplayName = "Started"))
 	bool TryStartDefense();
@@ -110,9 +112,9 @@ public:
 	void StopDefense();
 
 	/**
-	 * Move input in the defense stance (called by RequestMove instead of the camera-relative Move while IsDefending). The axes follow the player's
-	 * facing, not the camera (wanted: a player turned 30 degrees has WASD turned 30 degrees too). RightAxis (A/D): side steps; ForwardAxis (W/S):
-	 * toward / away from the faced direction, scaled by DefenseForwardSpeedScale. Both are scaled by the state's move speed multiplier.
+	 * Move input in the defense stance (called by RequestMove instead of Move while IsDefending). Same stick axes as Move, relative to the yaw of the
+	 * player's camera (user rule 2026-11-17): W = screen up, S = down, A = left, D = right, in straight lines, whatever the body facing.
+	 * The move is then split along the locked body facing: forward / back at DefenseForwardSpeedMultiplier, sideways at DefenseSideSpeedMultiplier.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerDive|Defense")
 	void AddDefenseMoveInput(float RightAxis, float ForwardAxis);
@@ -120,6 +122,13 @@ public:
 	/** True while in the defense stance. */
 	UFUNCTION(BlueprintPure, Category = "PlayerDive|Defense")
 	bool IsDefending() const { return bDefending; }
+
+	/**
+	 * Angle in degrees between the move (velocity) and the body facing, -180..180 (0: forward, 90: right, -90: left, 180: back), like CalculateDirection.
+	 * For the AnimBP blend of the defense side steps. 0 when not moving.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PlayerDive|Defense")
+	float GetDefenseMoveAngle() const;
 
 	/** Phase of the dive (None when not diving). */
 	UFUNCTION(BlueprintPure, Category = "PlayerDive")
@@ -133,7 +142,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerDive")
 	bool HasTouchedBall() const { return bTouchedBall; }
 
-	/** The profile in use: DiveProfile, or the UWB_PlayerDiveProfile class defaults when it is empty. Never null. */
+	/** The dive profile (DiveProfile). Null when it is not assigned (a warning is logged once; the dive and the defense are then refused). */
 	UFUNCTION(BlueprintPure, Category = "PlayerDive")
 	const UWB_PlayerDiveProfile* GetActiveDiveProfile() const;
 
@@ -188,9 +197,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> FlashShown;
 
-	/** Defense stance: active, yaw kept when no ball is in range, movement settings restored at the end. */
+	/** Defense stance: active, locked yaw (toward the ball at the start, or the facing), single turn still running, movement settings restored at the end. */
 	bool bDefending = false;
 	float DefenseYaw = 0.f;
+	bool bDefenseTurning = false;
 	bool bOrientRotationToMovementBefore = false;
 	bool bUseControllerDesiredRotationBefore = false;
 	bool bUseControllerRotationYawBefore = false;
@@ -201,8 +211,11 @@ private:
 	/** Simulated primitive of a ball actor (root or first simulated primitive). */
 	static UPrimitiveComponent* FindBallBody(AActor* Ball);
 
-	/** Body of the closest ball of BallClass within MaxBallDistance of From (simulated body, or root primitive when held). Null: none. */
-	UPrimitiveComponent* FindClosestBall(const FVector& From) const;
+	/** Body of the closest ball of BallClass within MaxDistance cm of From (simulated body, or root primitive when held). Null: none. */
+	UPrimitiveComponent* FindClosestBall(const FVector& From, float MaxDistance) const;
+
+	/** Missing DiveProfile already reported. */
+	mutable bool bWarnedNoProfile = false;
 
 	/** Picks the target and fills the planned jump (always succeeds: no ball in the cone means straight along the stick). */
 	void PlanDive();
@@ -222,7 +235,7 @@ private:
 	/** Bounces Ball off the body at Contact (closest body point), like on a wall moving at BodyVelocity. Returns false when the ball was not moving into the body. */
 	bool BounceBall(UPrimitiveComponent* Ball, const FVector& Contact, const FVector& BodyVelocity) const;
 
-	/** Defense stance, every frame: turn toward the ball, ball block. */
+	/** Defense stance, every frame: single turn toward the ball then locked facing, ball block. */
 	void TickDefense(float DeltaTime);
 
 	/** Leaves the defense stance: restores the rotation settings; Free when bReturnToFree. */

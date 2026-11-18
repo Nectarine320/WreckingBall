@@ -42,7 +42,7 @@ class WRECKINGBALL_API UWB_PlayerHitComponent : public UActorComponent
 public:
 	UWB_PlayerHitComponent();
 
-	/** Hit rules and durations (DA_PlayerHit_Default). Empty: the class defaults of UWB_PlayerHitProfile are used. */
+	/** Hit rules and durations (DA_PlayerHit_Default). Required: empty, the player cannot be hit and a warning is logged. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit")
 	TObjectPtr<UWB_PlayerHitProfile> HitProfile;
 
@@ -111,7 +111,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerHit")
 	FVector MakeDropImpulse(FVector HitDirection) const;
 
-	/** The profile in use: HitProfile, or the UWB_PlayerHitProfile class defaults when it is empty. Never null. */
+	/** The hit profile (HitProfile). Null when it is not assigned (a warning is logged once). */
 	UFUNCTION(BlueprintPure, Category = "PlayerHit")
 	const UWB_PlayerHitProfile* GetActiveHitProfile() const;
 
@@ -125,6 +125,9 @@ private:
 
 	/** Game time of the last accepted hit per source, for HitCooldown. */
 	TMap<TWeakObjectPtr<AActor>, double> LastHitTimes;
+
+	/** Missing HitProfile already reported. */
+	mutable bool bWarnedNoProfile = false;
 
 	/** Game time until which the player cannot be hit (post-Down grace). */
 	double GraceEndTime = -1.0;

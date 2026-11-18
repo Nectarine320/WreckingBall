@@ -9,6 +9,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
@@ -21,9 +22,6 @@ DEFINE_LOG_CATEGORY_STATIC(LogWBPlayerDive, Log, All);
 
 namespace
 {
-	/** Number of points of the predicted ball path tested when planning the dive. */
-	constexpr int32 PathSamples = 24;
-
 	float AnimLengthOr(const UAnimSequenceBase* Anim, float Fallback)
 	{
 		// Real playing time: the asset's RateScale speeds it up or slows it down.
@@ -58,7 +56,12 @@ void UWB_PlayerDiveComponent::BeginPlay()
 
 const UWB_PlayerDiveProfile* UWB_PlayerDiveComponent::GetActiveDiveProfile() const
 {
-	return DiveProfile ? DiveProfile.Get() : GetDefault<UWB_PlayerDiveProfile>();
+	if (!DiveProfile && !bWarnedNoProfile)
+	{
+		bWarnedNoProfile = true;
+		UE_LOG(LogWBPlayerDive, Warning, TEXT("%s: no DiveProfile on %s (DA_PlayerDive_Default expected). The dive and the defense are refused."), *GetNameSafe(GetOwner()), *GetName());
+	}
+	return DiveProfile.Get();
 }
 
 UPrimitiveComponent* UWB_PlayerDiveComponent::FindBallBody(AActor* Ball)
@@ -82,16 +85,16 @@ UPrimitiveComponent* UWB_PlayerDiveComponent::FindBallBody(AActor* Ball)
 	return nullptr; // Held (attached, not simulated): not in flight.
 }
 
-UPrimitiveComponent* UWB_PlayerDiveComponent::FindClosestBall(const FVector& From) const
+UPrimitiveComponent* UWB_PlayerDiveComponent::FindClosestBall(const FVector& From, float MaxDistance) const
 {
 	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
 	UWorld* World = GetWorld();
-	if (!World || !Profile->BallClass)
+	if (!World || !Profile || !Profile->BallClass)
 	{
 		return nullptr;
 	}
 	UPrimitiveComponent* Best = nullptr;
-	float BestDistSq = FMath::Square(Profile->MaxBallDistance);
+	float BestDistSq = FMath::Square(MaxDistance);
 	for (TActorIterator<AActor> It(World, Profile->BallClass); It; ++It)
 	{
 		// Kicked or not: a held ball (not simulated) counts too, at its root.
@@ -123,7 +126,7 @@ bool UWB_PlayerDiveComponent::HasMoveInput() const
 bool UWB_PlayerDiveComponent::TryStartDive()
 {
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
-	if (Phase != EWB_DivePhase::None || bDefending || !PlayerState || !Character || !Character->GetCapsuleComponent() || !Character->GetMesh())
+	if (Phase != EWB_DivePhase::None || bDefending || !PlayerState || !Character || !Character->GetCapsuleComponent() || !Character->GetMesh() || !GetActiveDiveProfile())
 	{
 		return false;
 	}
@@ -196,9 +199,9 @@ void UWB_PlayerDiveComponent::PlanDive()
 	JumpDirection = Stick;
 	JumpDistance = Profile->MaxDistance;
 	PeakBodyHeight = Profile->FreeDiveHeight;
-	PeakFraction = 0.45f;
+	PeakFraction = Profile->FreeDivePeakFraction;
 
-	UPrimitiveComponent* Ball = FindClosestBall(StartLocation);
+	UPrimitiveComponent* Ball = FindClosestBall(StartLocation, Profile->MaxBallDistance);
 	TargetBall = Ball;
 	bool bReachable = false;
 	bool bInCone = false;
@@ -222,9 +225,10 @@ void UWB_PlayerDiveComponent::PlanDive()
 		float BestError = TNumericLimits<float>::Max();
 		const float MinA = FMath::Clamp(Profile->MinInterceptFraction, 0.05f, 1.f);
 		const float MaxA = FMath::Clamp(Profile->MaxInterceptFraction, MinA, 1.f);
+		const int32 PathSamples = FMath::Max(Profile->PredictionSamples, 2);
 		for (int32 i = 0; i < PathSamples; ++i)
 		{
-			const float A = FMath::Lerp(MinA, MaxA, PathSamples > 1 ? static_cast<float>(i) / (PathSamples - 1) : 0.f);
+			const float A = FMath::Lerp(MinA, MaxA, static_cast<float>(i) / (PathSamples - 1));
 			const float Time = A * T;
 			FVector B = P0 + V0 * Time + FVector(0.f, 0.f, 0.5f * GravityZ * Time * Time);
 			B.Z = FMath::Max(B.Z, StartGroundZ + BallRadius);
@@ -254,7 +258,7 @@ void UWB_PlayerDiveComponent::PlanDive()
 			if (Error <= Profile->PlanningReach)
 			{
 				// Reachable: the point closest to the stick direction, then the earliest.
-				const float Score = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.f, 1.f))) + A * 10.f;
+				const float Score = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Dot, -1.f, 1.f))) + A * Profile->InterceptTimeWeight;
 				if (!bReachable || Score < BestScore)
 				{
 					BestScore = Score;
@@ -284,7 +288,7 @@ void UWB_PlayerDiveComponent::PlanDive()
 		{
 			Params.AddIgnoredActor(Ball->GetOwner());
 		}
-		if (World->LineTraceSingleByChannel(GroundHit, FVector(EndFlat.X, EndFlat.Y, StartGroundZ + 100.f), FVector(EndFlat.X, EndFlat.Y, StartGroundZ - 200.f), ECC_Visibility, Params))
+		if (World->LineTraceSingleByChannel(GroundHit, FVector(EndFlat.X, EndFlat.Y, StartGroundZ + Profile->LandingTraceUp), FVector(EndFlat.X, EndFlat.Y, StartGroundZ - Profile->LandingTraceDown), ECC_Visibility, Params))
 		{
 			EndGroundZ = GroundHit.ImpactPoint.Z;
 		}
@@ -295,9 +299,10 @@ void UWB_PlayerDiveComponent::PlanDive()
 	{
 		if (Ball)
 		{
-			for (int32 i = 0; i <= PathSamples; ++i)
+			const int32 DebugSamples = FMath::Max(Profile->PredictionSamples, 2);
+			for (int32 i = 0; i <= DebugSamples; ++i)
 			{
-				const float Time = T * i / PathSamples;
+				const float Time = T * i / DebugSamples;
 				FVector B = P0 + V0 * Time + FVector(0.f, 0.f, 0.5f * GravityZ * Time * Time);
 				B.Z = FMath::Max(B.Z, StartGroundZ + BallRadius);
 				DrawDebugPoint(World, B, 8.f, FColor::Orange, false, 2.f);
@@ -351,13 +356,21 @@ void UWB_PlayerDiveComponent::TickComponent(float DeltaTime, ELevelTick TickType
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
+	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
+	if (!Profile)
+	{
+		// Profile removed during play: stop right there.
+		EndDefense(true);
+		EndDive(true);
+		SetComponentTickEnabled(false);
+		return;
+	}
 	if (bDefending)
 	{
 		TickDefense(DeltaTime);
 		return;
 	}
 
-	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
 	switch (Phase)
 	{
 	case EWB_DivePhase::Takeoff:
@@ -407,7 +420,7 @@ void UWB_PlayerDiveComponent::TickAir(float DeltaTime)
 	const float T = FMath::Max(Profile->AirDuration, 0.2f);
 	Elapsed += DeltaTime;
 	const float A = FMath::Clamp(Elapsed / T, 0.f, 1.f);
-	Phase = Elapsed < FMath::Min(AnimLengthOr(Profile->JumpAnim, 0.2f), T) ? EWB_DivePhase::Takeoff : EWB_DivePhase::Air;
+	Phase = Elapsed < FMath::Min(AnimLengthOr(Profile->JumpAnim, Profile->TakeoffFallbackDuration), T) ? EWB_DivePhase::Takeoff : EWB_DivePhase::Air;
 
 	// Capsule: constant flat speed; it only rises when the body goes above standing height (a low dive keeps the capsule on the floor and lowers the body).
 	const float HalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
@@ -574,7 +587,8 @@ void UWB_PlayerDiveComponent::EndDive(bool bReturnToFree)
 bool UWB_PlayerDiveComponent::TryStartDefense()
 {
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
-	if (Phase != EWB_DivePhase::None || bDefending || !PlayerState || !Character)
+	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
+	if (Phase != EWB_DivePhase::None || bDefending || !PlayerState || !Character || !Profile)
 	{
 		return false;
 	}
@@ -583,9 +597,18 @@ bool UWB_PlayerDiveComponent::TryStartDefense()
 		return false;
 	}
 	bDefending = true;
-	// The stance keeps the direction the player is facing, no turn toward the ball (user decision 2026-11-17). It stays locked after:
-	// the player moves in straight lines along these axes.
+	// Single aim at the start (user rule 2026-11-17, 14 h 53): a ball within DefenseBallTrackRadius gives the yaw to reach, once; farther, the current
+	// facing. The target is never computed again: once reached, the facing stays locked even if the ball moves.
 	DefenseYaw = Character->GetActorRotation().Yaw;
+	if (const UPrimitiveComponent* Ball = FindClosestBall(Character->GetActorLocation(), Profile->DefenseBallTrackRadius))
+	{
+		const FVector ToBall = (Ball->GetComponentLocation() - Character->GetActorLocation()).GetSafeNormal2D();
+		if (!ToBall.IsNearlyZero())
+		{
+			DefenseYaw = ToBall.Rotation().Yaw;
+		}
+	}
+	bDefenseTurning = !FMath::IsNearlyZero(FMath::FindDeltaAngleDegrees(Character->GetActorRotation().Yaw, DefenseYaw), 0.5f);
 
 	// The component holds the facing itself; the moves come in the player's axes (AddDefenseMoveInput).
 	bUseControllerRotationYawBefore = Character->bUseControllerRotationYaw;
@@ -616,6 +639,7 @@ void UWB_PlayerDiveComponent::EndDefense(bool bReturnToFree)
 		return;
 	}
 	bDefending = false;
+	bDefenseTurning = false;
 	SetComponentTickEnabled(false);
 
 	if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
@@ -637,30 +661,48 @@ void UWB_PlayerDiveComponent::EndDefense(bool bReturnToFree)
 void UWB_PlayerDiveComponent::AddDefenseMoveInput(float RightAxis, float ForwardAxis)
 {
 	APawn* Pawn = Cast<APawn>(GetOwner());
-	if (!bDefending || !Pawn)
+	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
+	if (!bDefending || !Pawn || !Profile)
 	{
 		return;
 	}
-	// The player's own axes (yaw only), each turned to the side closest to the camera's axis: D stays "screen right-ish" and W "screen up-ish",
-	// only tilted by the player's angle. Without the flip, a player facing the camera would have inverted controls.
-	const FRotationMatrix Yaw(FRotator(0.f, Pawn->GetActorRotation().Yaw, 0.f));
-	FVector Right = Yaw.GetUnitAxis(EAxis::Y);
-	FVector Forward = Yaw.GetUnitAxis(EAxis::X);
-	if (const APlayerCameraManager* Camera = UGameplayStatics::GetPlayerCameraManager(this, 0))
+	// Camera-relative stick, exactly like the normal Move (user rule 2026-11-17): the yaw of the camera, flattened. The body facing is not used to
+	// read the input, so W / A / S / D always follow the screen in straight lines.
+	const APlayerCameraManager* Camera = nullptr;
+	if (const APlayerController* PlayerController = Cast<APlayerController>(Pawn->GetController()))
 	{
-		const FRotationMatrix CameraYaw(FRotator(0.f, Camera->GetCameraRotation().Yaw, 0.f));
-		if (FVector::DotProduct(Right, CameraYaw.GetUnitAxis(EAxis::Y)) < 0.f)
-		{
-			Right = -Right;
-		}
-		if (FVector::DotProduct(Forward, CameraYaw.GetUnitAxis(EAxis::X)) < 0.f)
-		{
-			Forward = -Forward;
-		}
+		Camera = PlayerController->PlayerCameraManager;
 	}
+	if (!Camera)
+	{
+		Camera = UGameplayStatics::GetPlayerCameraManager(this, 0); // Bots and the shared camera.
+	}
+	const FRotationMatrix CameraYaw(FRotator(0.f, Camera ? Camera->GetCameraRotation().Yaw : 0.f, 0.f));
+	const FVector Desired = CameraYaw.GetUnitAxis(EAxis::Y) * RightAxis + CameraYaw.GetUnitAxis(EAxis::X) * ForwardAxis;
+
+	// Speed split along the locked facing: forward / back and side steps each have their own share of the walk speed.
+	const FRotationMatrix BodyYaw(FRotator(0.f, Pawn->GetActorRotation().Yaw, 0.f));
+	const FVector BodyForward = BodyYaw.GetUnitAxis(EAxis::X);
+	const FVector BodyRight = BodyYaw.GetUnitAxis(EAxis::Y);
 	const float Speed = PlayerState ? PlayerState->GetMoveSpeedMultiplier() : 1.f;
-	Pawn->AddMovementInput(Right, RightAxis * Speed);
-	Pawn->AddMovementInput(Forward, ForwardAxis * Speed * GetActiveDiveProfile()->DefenseForwardSpeedScale);
+	Pawn->AddMovementInput(BodyForward, FVector::DotProduct(Desired, BodyForward) * Profile->DefenseForwardSpeedMultiplier * Speed);
+	Pawn->AddMovementInput(BodyRight, FVector::DotProduct(Desired, BodyRight) * Profile->DefenseSideSpeedMultiplier * Speed);
+}
+
+float UWB_PlayerDiveComponent::GetDefenseMoveAngle() const
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner)
+	{
+		return 0.f;
+	}
+	const FVector Velocity = Owner->GetVelocity().GetSafeNormal2D();
+	if (Velocity.IsNearlyZero())
+	{
+		return 0.f;
+	}
+	const FRotationMatrix BodyYaw(FRotator(0.f, Owner->GetActorRotation().Yaw, 0.f));
+	return FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(Velocity, BodyYaw.GetUnitAxis(EAxis::Y)), FVector::DotProduct(Velocity, BodyYaw.GetUnitAxis(EAxis::X))));
 }
 
 void UWB_PlayerDiveComponent::TickDefense(float DeltaTime)
@@ -673,9 +715,20 @@ void UWB_PlayerDiveComponent::TickDefense(float DeltaTime)
 	}
 	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
 
-	// Holds the facing locked at the start of the stance (no ball tracking).
-	UPrimitiveComponent* Ball = FindClosestBall(Character->GetActorLocation());
-	Character->SetActorRotation(FRotator(0.f, DefenseYaw, 0.f));
+	// Single turn toward the yaw chosen at the start, then the facing stays locked there (no ball tracking).
+	float Yaw = DefenseYaw;
+	if (bDefenseTurning)
+	{
+		Yaw = FMath::FixedTurn(Character->GetActorRotation().Yaw, DefenseYaw, Profile->DefenseTurnSpeed * DeltaTime);
+		bDefenseTurning = !FMath::IsNearlyZero(FMath::FindDeltaAngleDegrees(Yaw, DefenseYaw), 0.5f);
+		if (!bDefenseTurning)
+		{
+			Yaw = DefenseYaw;
+		}
+	}
+	Character->SetActorRotation(FRotator(0.f, Yaw, 0.f));
+
+	UPrimitiveComponent* Ball = FindClosestBall(Character->GetActorLocation(), Profile->MaxBallDistance);
 
 	const FVector Forward = Character->GetActorForwardVector().GetSafeNormal2D();
 
@@ -735,7 +788,7 @@ void UWB_PlayerDiveComponent::StartFlash()
 	const UWB_PlayerDiveProfile* Profile = GetActiveDiveProfile();
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	UWorld* World = GetWorld();
-	if (!Profile->FlashMaterial || !Character || !Character->GetMesh() || !World)
+	if (!Profile || !Profile->FlashMaterial || !Character || !Character->GetMesh() || !World)
 	{
 		return;
 	}

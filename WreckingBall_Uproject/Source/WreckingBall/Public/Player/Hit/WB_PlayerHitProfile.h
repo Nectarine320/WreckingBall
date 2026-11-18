@@ -41,6 +41,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
 	float DownKnockbackUpStrength = 200.f;
 
+	/** How close to the Dash line (0..1, side share of the direction to the victim) counts as dead center: the bump then goes left or right at random. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", ClampMax = "1"))
+	float DownPushCenterTolerance = 0.05f;
+
 	/** Seconds after getting up during which the player cannot be stunned or knocked Down again (no fall loop). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", Units = "Seconds"))
 	float PostDownGraceSeconds = 1.f;
@@ -96,6 +100,10 @@ public:
 	/** Surfaces whose normal has a vertical part above this value (0..1) give no bounce: floor, ceiling, top of an edge. Keeps the Dash from launching the player up or down. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", ClampMax = "1"))
 	float RecoilMaxNormalZ = 0.7f;
+
+	/** Smallest angle in degrees between the bounce and the wall: a Dash that grazes the wall still bounces at least this much away from it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil", meta = (ClampMin = "0", ClampMax = "90", Units = "Degrees"))
+	float RecoilMinBounceAngle = 5.74f;
 
 	/** Full-body bounce animation played by the AnimBP while Recoiling (AS_Dash_Recoil). Keep it about as long as RecoilDuration. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Recoil")

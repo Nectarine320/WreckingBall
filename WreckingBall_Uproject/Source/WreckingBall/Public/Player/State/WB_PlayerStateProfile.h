@@ -65,7 +65,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
 	float ActionMoveSpeedMultiplier = 0.5f;
 
-	/** Move speed multiplier in the defense stance (Defending): the side steps (A/D) go at this share of the walk speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "0", ClampMax = "1"))
-	float DefenseMoveSpeedMultiplier = 0.7f;
+	/**
+	 * Shape of the speed rise of Celebrating, from the start to the peak at mid-celebration (ease-out: 1 - (1 - t)^this).
+	 * 1 = straight line, 3 = explosive start (default), higher = even faster start.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Movement", meta = (ClampMin = "1"))
+	float CelebrationRiseExponent = 3.f;
 };

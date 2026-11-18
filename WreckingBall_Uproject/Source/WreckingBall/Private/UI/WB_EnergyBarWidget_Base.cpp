@@ -2,6 +2,7 @@
 
 #include "Engine/World.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "UI/WB_EnergyBarVisualProfile.h"
 
 namespace
 {
@@ -9,9 +10,6 @@ namespace
 	const FName ConsumedPercentParam(TEXT("ConsumedPercent"));
 	const FName ColorParam(TEXT("Color"));
 	const FName ConsumedColorParam(TEXT("ConsumedColor"));
-
-	/** While exhausted, the not-yet-recharged part of the ring shows the blink color this much darker, so the refill stays readable. */
-	constexpr float ExhaustedEmptyBrightness = 0.4f;
 }
 
 void UWB_EnergyBarWidget_Base::SetBarMaterial(UMaterialInstanceDynamic* InMaterial)
@@ -27,6 +25,16 @@ double UWB_EnergyBarWidget_Base::GetNow() const
 
 bool UWB_EnergyBarWidget_Base::UpdateEnergyBar(float Percent, float ConsumedPercent, bool bExhausted)
 {
+	const UWB_EnergyBarVisualProfile* Profile = VisualProfile.Get();
+	if (!Profile)
+	{
+		if (!bWarnedNoProfile)
+		{
+			bWarnedNoProfile = true;
+			UE_LOG(LogTemp, Warning, TEXT("%s: no VisualProfile (DA_EnergyBarVisual expected). The energy bar is not updated."), *GetName());
+		}
+		return true;
+	}
 	const double Now = GetNow();
 	Percent = FMath::Clamp(Percent, 0.f, 1.f);
 
@@ -43,7 +51,7 @@ bool UWB_EnergyBarWidget_Base::UpdateEnergyBar(float Percent, float ConsumedPerc
 	}
 
 	// Same blend as the former Blueprint (plain RGB lerp, red to green).
-	FLinearColor Color = FMath::Lerp(EmptyColor, FullColor, Percent);
+	FLinearColor Color = FMath::Lerp(Profile->EmptyColor, Profile->FullColor, Percent);
 	FLinearColor ConsumedColor = FLinearColor::White;
 	bool bCanHide = true;
 
@@ -51,26 +59,26 @@ bool UWB_EnergyBarWidget_Base::UpdateEnergyBar(float Percent, float ConsumedPerc
 	{
 		// Slow sine blink between two dark reds, one cycle every ExhaustedBlinkPeriod. The whole ring blinks:
 		// the recharged part in the blink color, the rest of the ring darker (so an empty bar still shows).
-		const float Wave = 0.5f + 0.5f * FMath::Sin(UE_TWO_PI * static_cast<float>(Now) / FMath::Max(ExhaustedBlinkPeriod, 0.02f));
-		Color = FMath::Lerp(ExhaustedColorA, ExhaustedColorB, Wave);
-		ConsumedColor = Color * ExhaustedEmptyBrightness;
+		const float Wave = 0.5f + 0.5f * FMath::Sin(UE_TWO_PI * static_cast<float>(Now) / FMath::Max(Profile->ExhaustedBlinkPeriod, 0.02f));
+		Color = FMath::Lerp(Profile->ExhaustedColorA, Profile->ExhaustedColorB, Wave);
+		ConsumedColor = Color * Profile->ExhaustedEmptyBrightness;
 		ConsumedColor.A = 1.f;
 		ConsumedPercent = 1.f;
 	}
 	else if (RefilledStartTime >= 0.0)
 	{
 		const float Elapsed = static_cast<float>(Now - RefilledStartTime);
-		if (Elapsed < RefilledFlashDuration)
+		if (Elapsed < Profile->RefilledFlashDuration)
 		{
 			// One sine bump: full color -> white -> full color.
-			const float Bump = FMath::Sin(PI * Elapsed / FMath::Max(RefilledFlashDuration, KINDA_SMALL_NUMBER));
-			Color = FMath::Lerp(FullColor, RefilledFlashColor, Bump);
+			const float Bump = FMath::Sin(PI * Elapsed / FMath::Max(Profile->RefilledFlashDuration, KINDA_SMALL_NUMBER));
+			Color = FMath::Lerp(Profile->FullColor, Profile->RefilledFlashColor, Bump);
 		}
 		else
 		{
-			Color = FullColor;
+			Color = Profile->FullColor;
 		}
-		bCanHide = Elapsed >= RefilledFlashDuration + RefilledHoldDuration;
+		bCanHide = Elapsed >= Profile->RefilledFlashDuration + Profile->RefilledHoldDuration;
 		if (bCanHide)
 		{
 			RefilledStartTime = -1.0;

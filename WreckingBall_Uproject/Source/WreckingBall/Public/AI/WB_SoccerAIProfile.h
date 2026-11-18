@@ -113,6 +113,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Shoot", meta = (ClampMin = "0", ClampMax = "90"))
 	float ShootConeHalfAngle = 50.f;
 
+	/** Out of the shooting zone, the bot runs to a spot inside this share of ShootConeHalfAngle (0.8: a bit inside the edge, so it does not stop right on the border). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Shoot", meta = (ClampMin = "0", ClampMax = "1"))
+	float ShootSpotConeScale = 0.8f;
+
 	/** Random yaw (plus or minus) added to the aim at each shot. 0: always the goal center. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Shoot", meta = (ClampMin = "0", ClampMax = "45"))
 	float ShootAimJitter = 5.f;

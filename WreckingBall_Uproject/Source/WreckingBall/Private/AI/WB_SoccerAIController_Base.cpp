@@ -44,7 +44,7 @@ AWB_SoccerAIController_Base::AWB_SoccerAIController_Base()
 
 const UWB_SoccerAIProfile* AWB_SoccerAIController_Base::GetActiveProfile() const
 {
-	return AIProfile ? AIProfile.Get() : GetDefault<UWB_SoccerAIProfile>();
+	return AIProfile.Get();
 }
 
 int32 AWB_SoccerAIController_Base::GetTeamIndex() const
@@ -150,6 +150,17 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	ACharacter* Me = GetCharacter();
 	if (!Me || !Commands || !PlayerStateComp)
 	{
+		return;
+	}
+	if (!AIProfile)
+	{
+		// No silent fallback: without its profile the bot does nothing.
+		if (!bWarnedNoProfile)
+		{
+			bWarnedNoProfile = true;
+			UE_LOG(LogTemp, Warning, TEXT("%s: no AIProfile (DA_SoccerAIProfile_Default expected). The bot stays idle."), *GetName());
+		}
+		Commands->StopMoving();
 		return;
 	}
 
@@ -300,7 +311,7 @@ bool AWB_SoccerAIController_Base::EvaluateDash(APawn* Target, FVector& AimPoint)
 	const ACharacter* Me = GetCharacter();
 	AimPoint = Target ? Target->GetActorLocation() : FVector::ZeroVector;
 	LastDashAimPoint = AimPoint;
-	if (!Me || !Target || !Commands || !PlayerStateComp)
+	if (!Me || !Target || !Commands || !PlayerStateComp || !AIProfile || !Commands->GetDashProfile())
 	{
 		DashBlockReason = NoTarget;
 		return false;
@@ -494,7 +505,7 @@ void AWB_SoccerAIController_Base::TickAttack(ACharacter* Me, float DeltaSeconds)
 	if (!bInZone)
 	{
 		// Run to the spot of the zone closest to the current side.
-		const FVector SpotDir = ClampDirectionToCone(FromGoalDir.IsNearlyZero() ? FieldDirection : FromGoalDir, FieldDirection, Profile->ShootConeHalfAngle * 0.8f);
+		const FVector SpotDir = ClampDirectionToCone(FromGoalDir.IsNearlyZero() ? FieldDirection : FromGoalDir, FieldDirection, Profile->ShootConeHalfAngle * Profile->ShootSpotConeScale);
 		MoveTowardLocation(Me, Aim + SpotDir * Profile->ShootPreferredDistance);
 		return;
 	}

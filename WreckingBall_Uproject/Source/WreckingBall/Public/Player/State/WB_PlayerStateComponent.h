@@ -6,7 +6,7 @@
 #include "WB_PlayerStateComponent.generated.h"
 
 class UWB_PlayerStateProfile;
-class UWB_PlayerActionCostProfile;
+class UWB_PlayerEnergyProfile;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnPlayerStateChanged, FGameplayTag, OldState, FGameplayTag, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnHoldingChanged, FGameplayTag, OldHolding, FGameplayTag, NewHolding);
@@ -33,13 +33,13 @@ public:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PlayerState", meta = (Categories = "Player.Holding"))
 	FGameplayTag CurrentHolding;
 
-	/** State rules and durations (DA_PlayerState_Default). Empty: the class defaults of UWB_PlayerStateProfile are used (same table as the quote). */
+	/** State rules and durations (DA_PlayerState_Default). Required: empty, every state change is refused and a warning is logged. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState")
 	TObjectPtr<UWB_PlayerStateProfile> PlayerStateProfile;
 
-	/** Energy cost of the player actions (DA_PlayerActionCost_Default). Empty: the class defaults of UWB_PlayerActionCostProfile are used. */
+	/** Energy settings of the player: sprint, recharge, exhaustion, action costs (DA_PlayerEnergy_Default). Required: empty, a warning is logged and the Blueprint reads None. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState")
-	TObjectPtr<UWB_PlayerActionCostProfile> ActionCostProfile;
+	TObjectPtr<UWB_PlayerEnergyProfile> EnergyProfile;
 
 	/** Called after CurrentState changed. Bind it instead of reading CurrentState every frame (HUD, AnimBP). */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerState")
@@ -110,7 +110,7 @@ public:
 
 	/**
 	 * Scale to apply to the move input: 0 when CanMove is false (Disabled, Down, Stunned by default),
-	 * from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, DefenseMoveSpeedMultiplier while Defending, 1 otherwise.
+	 * from 1 to ActionMoveSpeedMultiplier with ActionCharge while Kicking or Throwing, 1 otherwise (the defense stance speeds are in the dive profile).
 	 * Scaling the input (not MaxWalkSpeed) keeps the sprint system untouched.
 	 */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
@@ -139,13 +139,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
 	bool IsHoldingAnything() const;
 
-	/** The profile in use: PlayerStateProfile, or the UWB_PlayerStateProfile class defaults when it is empty. Never null. */
+	/** The state profile (PlayerStateProfile). Null when it is not assigned (a warning is logged once). */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
 	const UWB_PlayerStateProfile* GetActiveProfile() const;
 
-	/** The action cost profile in use: ActionCostProfile, or the UWB_PlayerActionCostProfile class defaults when it is empty. Never null. */
+	/** The energy profile (EnergyProfile). Null when it is not assigned (a warning is logged once). */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
-	const UWB_PlayerActionCostProfile* GetActiveActionCostProfile() const;
+	const UWB_PlayerEnergyProfile* GetActiveEnergyProfile() const;
 
 	/** Turns the debug text above the player on or off during play. */
 	UFUNCTION(BlueprintCallable, Category = "Debug")
@@ -168,6 +168,10 @@ private:
 
 	/** Game time when Celebrating started, for the speed ramp. */
 	double CelebrationStartTime = 0.0;
+
+	/** Missing profile warnings already logged (one per profile and component). */
+	mutable bool bWarnedNoStateProfile = false;
+	mutable bool bWarnedNoEnergyProfile = false;
 
 	/** Sets the owner's MaxWalkSpeed to DefaultWalkSpeed x Multiplier (no effect without character movement). */
 	void ApplyWalkSpeedMultiplier(float Multiplier) const;

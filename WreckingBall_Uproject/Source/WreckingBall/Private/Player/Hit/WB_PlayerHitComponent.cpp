@@ -55,7 +55,12 @@ void UWB_PlayerHitComponent::BeginPlay()
 
 const UWB_PlayerHitProfile* UWB_PlayerHitComponent::GetActiveHitProfile() const
 {
-	return HitProfile ? HitProfile.Get() : GetDefault<UWB_PlayerHitProfile>();
+	if (!HitProfile && !bWarnedNoProfile)
+	{
+		bWarnedNoProfile = true;
+		UE_LOG(LogWBPlayerHit, Warning, TEXT("%s: no HitProfile on %s (DA_PlayerHit_Default expected). The player cannot be hit."), *GetNameSafe(GetOwner()), *GetName());
+	}
+	return HitProfile.Get();
 }
 
 bool UWB_PlayerHitComponent::IsInPostDownGrace() const
@@ -82,6 +87,10 @@ bool UWB_PlayerHitComponent::CanBeHitBy(AActor* Source) const
 	}
 
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile)
+	{
+		return false;
+	}
 	const UWorld* World = GetWorld();
 	if (const double* LastTime = LastHitTimes.Find(Source))
 	{
@@ -121,7 +130,7 @@ void UWB_PlayerHitComponent::RegisterHit(AActor* Source)
 bool UWB_PlayerHitComponent::ReceiveThrownHit(AActor* Source, FVector ImpactVelocity, bool bSourceIsBall)
 {
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
-	if (bSourceIsBall && !Profile->bBallCanStun)
+	if (!Profile || (bSourceIsBall && !Profile->bBallCanStun))
 	{
 		return false;
 	}
@@ -186,7 +195,7 @@ bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 	{
 		const FVector DashRight = FVector::CrossProduct(FVector::UpVector, DashDirection);
 		float Side = FVector::DotProduct(ToVictim, DashRight);
-		if (FMath::IsNearlyZero(Side, 0.05f))
+		if (FMath::IsNearlyZero(Side, Profile->DownPushCenterTolerance))
 		{
 			Side = FMath::RandBool() ? 1.f : -1.f; // Dead center: pick a side.
 		}
@@ -227,6 +236,10 @@ bool UWB_PlayerHitComponent::ApplyDashRecoil(AActor* HitActor, FVector HitNormal
 		return false;
 	}
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile)
+	{
+		return false;
+	}
 
 	// Floor, ceiling or top of an edge: no bounce, the height only comes from RecoilUpSpeed.
 	const FVector Normal = HitNormal.GetSafeNormal();
@@ -266,7 +279,7 @@ bool UWB_PlayerHitComponent::ApplyDashRecoil(AActor* HitActor, FVector HitNormal
 	// Mirror bounce, like a ball: the Dash direction reflected on the surface (45 degrees in, 45 degrees out on the other side of the normal).
 	// Head-on, this is straight back along the normal. Always at least a little away from the surface.
 	FVector Mirror = (Direction - 2.f * FVector::DotProduct(Direction, FlatNormal) * FlatNormal).GetSafeNormal2D();
-	if (FVector::DotProduct(Mirror, FlatNormal) < 0.1f)
+	if (FVector::DotProduct(Mirror, FlatNormal) < FMath::Sin(FMath::DegreesToRadians(Profile->RecoilMinBounceAngle)))
 	{
 		Mirror = FlatNormal;
 	}
@@ -373,9 +386,10 @@ void UWB_PlayerHitComponent::HandlePlayerStateChanged(FGameplayTag OldState, FGa
 	if (OldState == WBTags::Player_State_Down)
 	{
 		bAwaitingDownLanding = false;
-		if (const UWorld* World = GetWorld())
+		const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+		if (const UWorld* World = GetWorld(); World && Profile)
 		{
-			GraceEndTime = World->GetTimeSeconds() + GetActiveHitProfile()->PostDownGraceSeconds;
+			GraceEndTime = World->GetTimeSeconds() + Profile->PostDownGraceSeconds;
 		}
 		StartGraceBlink(); // Keeps blinking if already started (nothing restarts), until the end of the grace.
 	}
@@ -386,7 +400,7 @@ void UWB_PlayerHitComponent::StartGraceBlink()
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	UWorld* World = GetWorld();
-	if (!Profile->GraceBlinkMaterial || !Character || !Character->GetMesh() || !World || !IsInPostDownGrace())
+	if (!Profile || !Profile->GraceBlinkMaterial || !Character || !Character->GetMesh() || !World || !IsInPostDownGrace())
 	{
 		return;
 	}
@@ -404,13 +418,14 @@ void UWB_PlayerHitComponent::StartGraceBlink()
 void UWB_PlayerHitComponent::TickGraceBlink()
 {
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
-	if (!Character || !Character->GetMesh() || !IsInPostDownGrace())
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile || !Character || !Character->GetMesh() || !IsInPostDownGrace())
 	{
 		StopGraceBlink();
 		return;
 	}
 	bGraceFlashOn = !bGraceFlashOn;
-	Character->GetMesh()->SetOverlayMaterial(bGraceFlashOn ? GetActiveHitProfile()->GraceBlinkMaterial.Get() : OverlayBeforeBlink.Get());
+	Character->GetMesh()->SetOverlayMaterial(bGraceFlashOn ? Profile->GraceBlinkMaterial.Get() : OverlayBeforeBlink.Get());
 }
 
 void UWB_PlayerHitComponent::StopGraceBlink()
@@ -448,6 +463,10 @@ void UWB_PlayerHitComponent::StartDownGroundTimer()
 {
 	// On the ground: lie for DownDuration, then get up (the get-up length is still Down: invulnerable, cannot move).
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile)
+	{
+		return;
+	}
 	PlayerState->ReturnToFreeAfter(Profile->DownDuration + GetAnimLength(Profile->DownGetUpAnim));
 	if (const UWorld* World = GetWorld())
 	{
@@ -479,6 +498,10 @@ EWB_HitReactPhase UWB_PlayerHitComponent::GetHitReactPhase() const
 		return EWB_HitReactPhase::GetUp;
 	}
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile)
+	{
+		return EWB_HitReactPhase::Loop;
+	}
 	const float EnterLength = GetAnimLength(bDown ? Profile->DownEnterAnim : Profile->StunEnterAnim);
 	if (Now - HitReactStartTime < EnterLength || (bDown && bAwaitingDownLanding))
 	{
@@ -490,6 +513,10 @@ EWB_HitReactPhase UWB_PlayerHitComponent::GetHitReactPhase() const
 FVector UWB_PlayerHitComponent::MakeDropImpulse(FVector HitDirection) const
 {
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile)
+	{
+		return FVector::ZeroVector;
+	}
 	FVector Direction = HitDirection.GetSafeNormal2D();
 	if (Direction.IsNearlyZero() && GetOwner())
 	{

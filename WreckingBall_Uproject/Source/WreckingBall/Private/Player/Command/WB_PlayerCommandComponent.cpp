@@ -4,7 +4,8 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
-#include "Player/Energy/WB_PlayerActionCostProfile.h"
+#include "Player/Dash/WB_PlayerDashProfile.h"
+#include "Player/Energy/WB_PlayerEnergyProfile.h"
 #include "Player/State/WB_PlayerStateComponent.h"
 #include "UObject/UnrealType.h"
 
@@ -156,23 +157,34 @@ float UWB_PlayerCommandComponent::GetDashEnergyCost() const
 {
 	const AActor* Owner = GetOwner();
 	const UWB_PlayerStateComponent* State = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
-	return State ? State->GetActiveActionCostProfile()->DashEnergyCost : GetDefault<UWB_PlayerActionCostProfile>()->DashEnergyCost;
+	const UWB_PlayerEnergyProfile* Energy = State ? State->GetActiveEnergyProfile() : nullptr;
+	return Energy ? Energy->DashEnergyCost : 1.f;
+}
+
+const UWB_PlayerDashProfile* UWB_PlayerCommandComponent::GetDashProfile() const
+{
+	if (!DashProfile && !bWarnedNoDashProfile)
+	{
+		bWarnedNoDashProfile = true;
+		UE_LOG(LogWBPlayerCommand, Warning, TEXT("%s: no DashProfile on %s (DA_PlayerDash_Default expected). The Dash settings read None, the bots never Dash."), *GetNameSafe(GetOwner()), *GetName());
+	}
+	return DashProfile.Get();
 }
 
 float UWB_PlayerCommandComponent::GetDashDistance() const
 {
-	float Value = 350.f;
-	return ReadOwnerNumber(DashDistanceVariable, Value) && Value > 0.f ? Value : 350.f;
+	const UWB_PlayerDashProfile* Profile = GetDashProfile();
+	return Profile ? Profile->DashDistance : 0.f;
 }
 
 float UWB_PlayerCommandComponent::GetDashDuration() const
 {
-	float Value = 0.2f;
-	return ReadOwnerNumber(DashDurationVariable, Value) && Value > 0.f ? Value : 0.2f;
+	const UWB_PlayerDashProfile* Profile = GetDashProfile();
+	return Profile ? Profile->DashDuration : 0.f;
 }
 
 float UWB_PlayerCommandComponent::GetDashMinRunUp() const
 {
-	float Value = 35.f;
-	return ReadOwnerNumber(DashMinRunUpVariable, Value) ? FMath::Max(0.f, Value) : 35.f;
+	const UWB_PlayerDashProfile* Profile = GetDashProfile();
+	return Profile ? Profile->DashMinRunUpDistancePlayer : 0.f;
 }

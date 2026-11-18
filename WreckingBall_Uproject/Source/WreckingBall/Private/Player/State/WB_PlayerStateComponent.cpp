@@ -7,7 +7,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Pawn.h"
 #include "TimerManager.h"
-#include "Player/Energy/WB_PlayerActionCostProfile.h"
+#include "Player/Energy/WB_PlayerEnergyProfile.h"
 #include "Player/Hit/WB_PlayerHitComponent.h"
 #include "Player/State/WB_PlayerStateProfile.h"
 #include "Player/State/WB_PlayerStateTags.h"
@@ -72,12 +72,22 @@ void UWB_PlayerStateComponent::ApplyWalkSpeedMultiplier(float Multiplier) const
 
 const UWB_PlayerStateProfile* UWB_PlayerStateComponent::GetActiveProfile() const
 {
-	return PlayerStateProfile ? PlayerStateProfile.Get() : GetDefault<UWB_PlayerStateProfile>();
+	if (!PlayerStateProfile && !bWarnedNoStateProfile)
+	{
+		bWarnedNoStateProfile = true;
+		UE_LOG(LogWBPlayerState, Warning, TEXT("%s: no PlayerStateProfile on %s (DA_PlayerState_Default expected). Every state change is refused."), *GetNameSafe(GetOwner()), *GetName());
+	}
+	return PlayerStateProfile.Get();
 }
 
-const UWB_PlayerActionCostProfile* UWB_PlayerStateComponent::GetActiveActionCostProfile() const
+const UWB_PlayerEnergyProfile* UWB_PlayerStateComponent::GetActiveEnergyProfile() const
 {
-	return ActionCostProfile ? ActionCostProfile.Get() : GetDefault<UWB_PlayerActionCostProfile>();
+	if (!EnergyProfile && !bWarnedNoEnergyProfile)
+	{
+		bWarnedNoEnergyProfile = true;
+		UE_LOG(LogWBPlayerState, Warning, TEXT("%s: no EnergyProfile on %s (DA_PlayerEnergy_Default expected). Sprint and energy costs read None."), *GetNameSafe(GetOwner()), *GetName());
+	}
+	return EnergyProfile.Get();
 }
 
 bool UWB_PlayerStateComponent::CanEnterState(FGameplayTag NewState) const
@@ -88,6 +98,10 @@ bool UWB_PlayerStateComponent::CanEnterState(FGameplayTag NewState) const
 	}
 
 	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	if (!Profile)
+	{
+		return false;
+	}
 	const FGameplayTagContainer* Allowed = Profile->AllowedTransitions.Find(CurrentState);
 	if (!Allowed || !Allowed->HasTagExact(NewState))
 	{
@@ -131,7 +145,7 @@ bool UWB_PlayerStateComponent::ChangePlayerState(FGameplayTag NewState)
 	{
 		const UWorld* CurrentWorld = GetWorld();
 		CelebrationStartTime = CurrentWorld ? CurrentWorld->GetTimeSeconds() : 0.0;
-		ApplyWalkSpeedMultiplier(GetActiveProfile()->CelebrationStartSpeedMultiplier);
+		ApplyWalkSpeedMultiplier(GetActiveProfile()->CelebrationStartSpeedMultiplier); // Profile checked by CanEnterState.
 	}
 	else if (OldState == WBTags::Player_State_Celebrating)
 	{
@@ -189,12 +203,15 @@ void UWB_PlayerStateComponent::ReturnToFreeAfter(float Duration)
 
 bool UWB_PlayerStateComponent::CanMove() const
 {
-	return !GetActiveProfile()->StatesBlockingMovement.HasTagExact(CurrentState);
+	// No profile: the move stays free (only the states and the sprint are cut), so the missing asset is obvious but the game still runs.
+	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	return !Profile || !Profile->StatesBlockingMovement.HasTagExact(CurrentState);
 }
 
 bool UWB_PlayerStateComponent::CanSprint() const
 {
-	return !GetActiveProfile()->StatesBlockingSprint.HasTagExact(CurrentState);
+	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	return Profile && !Profile->StatesBlockingSprint.HasTagExact(CurrentState);
 }
 
 float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
@@ -212,11 +229,8 @@ float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
 		{
 			return 0.001f;
 		}
-		return FMath::Lerp(1.f, GetActiveProfile()->ActionMoveSpeedMultiplier, ActionCharge);
-	}
-	if (CurrentState == WBTags::Player_State_Defending)
-	{
-		return GetActiveProfile()->DefenseMoveSpeedMultiplier;
+		const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+		return Profile ? FMath::Lerp(1.f, Profile->ActionMoveSpeedMultiplier, ActionCharge) : 1.f;
 	}
 	return 1.f;
 }
@@ -247,9 +261,13 @@ void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
 		return;
 	}
 
-	// Speed curve (user request 2026-11-16): explosive rise from the start to the peak at mid-celebration (ease-out cubic),
+	// Speed curve (user request 2026-11-16): explosive rise from the start to the peak at mid-celebration (ease-out, CelebrationRiseExponent),
 	// then a gradual fade back to the default walk speed at the end (smoothstep), so the end of the state has no speed jump.
 	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	if (!Profile)
+	{
+		return;
+	}
 	const UWorld* World = GetWorld();
 	const float Elapsed = World ? static_cast<float>(World->GetTimeSeconds() - CelebrationStartTime) : 0.f;
 	const float Alpha = Profile->CelebrationDuration > 0.f ? FMath::Clamp(Elapsed / Profile->CelebrationDuration, 0.f, 1.f) : 1.f;
@@ -257,7 +275,7 @@ void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
 	if (Alpha <= 0.5f)
 	{
 		const float Rise = Alpha / 0.5f;
-		SpeedMultiplier = FMath::Lerp(Profile->CelebrationStartSpeedMultiplier, Profile->CelebrationEndSpeedMultiplier, 1.f - FMath::Pow(1.f - Rise, 3.f));
+		SpeedMultiplier = FMath::Lerp(Profile->CelebrationStartSpeedMultiplier, Profile->CelebrationEndSpeedMultiplier, 1.f - FMath::Pow(1.f - Rise, Profile->CelebrationRiseExponent));
 	}
 	else
 	{
@@ -270,7 +288,7 @@ void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
 	if (!CelebrationSteering.IsNearlyZero())
 	{
 		// Turn the running direction toward the stick, at most CelebrationTurnRate degrees per second.
-		const float MaxStepRadians = FMath::DegreesToRadians(GetActiveProfile()->CelebrationTurnRate) * DeltaTime;
+		const float MaxStepRadians = FMath::DegreesToRadians(Profile->CelebrationTurnRate) * DeltaTime;
 		const float AngleToTarget = FMath::Acos(FMath::Clamp(FVector::DotProduct(RunDirection, CelebrationSteering), -1.f, 1.f));
 		if (AngleToTarget <= MaxStepRadians)
 		{

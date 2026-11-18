@@ -4,6 +4,8 @@
 #include "Components/ActorComponent.h"
 #include "WB_PlayerCommandComponent.generated.h"
 
+class UWB_PlayerDashProfile;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnMoveCommand, float, XAxis, float, YAxis);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWB_OnPlayerCommand);
 
@@ -77,7 +79,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand")
 	bool IsMoving() const { return bMoving; }
 
-	// ---- Readout: values the owner Blueprint keeps in its own variables (energy, Dash), read by name for the bots. ----
+	/** Dash settings of the player: distance, duration, scan, run-ups, damage angle (DA_PlayerDash_Default). Read by BP_GenericCharacter and the bots. Required: empty, a warning is logged and the bots never Dash. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand")
+	TObjectPtr<UWB_PlayerDashProfile> DashProfile;
+
+	/** The Dash profile (DashProfile). Null when it is not assigned (a warning is logged once). */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand")
+	const UWB_PlayerDashProfile* GetDashProfile() const;
+
+	// ---- Readout: energy values the owner Blueprint keeps in its own variables (sprint Timelines), read by name for the bots. ----
 
 	/** Owner Blueprint float variable holding the energy, 0 (empty) to 1 (full). BP_GenericCharacter: Sprint Lifetime Percent. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
@@ -91,18 +101,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
 	FString ExhaustedWalkType = TEXT("Exhausted");
 
-	/** Owner Blueprint float variable of the distance in cm a full Dash travels. BP_GenericCharacter: DashScanDistance. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
-	FName DashDistanceVariable = TEXT("DashScanDistance");
-
-	/** Owner Blueprint float variable of the duration in seconds of a full Dash. BP_GenericCharacter: Dash Speed. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
-	FName DashDurationVariable = TEXT("Dash Speed");
-
-	/** Owner Blueprint float variable of the minimum run-up in cm for a Dash to knock a player Down. BP_GenericCharacter: DashMinRunUpDistancePlayer. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Readout")
-	FName DashMinRunUpVariable = TEXT("DashMinRunUpDistancePlayer");
-
 	/** Energy of the owner, 0..1 (EnergyPercentVariable). 1 when the variable is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
 	float GetEnergyPercent() const;
@@ -111,19 +109,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
 	bool IsExhausted() const;
 
-	/** Energy used by one Dash (ActionCostProfile of the owner's UWB_PlayerStateComponent), 0..1. */
+	/** Energy used by one Dash (EnergyProfile of the owner's UWB_PlayerStateComponent), 0..1. 1 (a full bar) when the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
 	float GetDashEnergyCost() const;
 
-	/** Distance in cm of a full Dash (DashDistanceVariable). 350 when the variable is missing. */
+	/** Distance in cm of a full Dash (DashProfile). 0 when the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
 	float GetDashDistance() const;
 
-	/** Duration in seconds of a full Dash (DashDurationVariable). 0.2 when the variable is missing. */
+	/** Duration in seconds of a full Dash (DashProfile). 0 when the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
 	float GetDashDuration() const;
 
-	/** Minimum run-up in cm for a Dash to knock a player Down (DashMinRunUpVariable). 35 when the variable is missing. */
+	/** Minimum run-up in cm for a Dash to knock a player Down (DashProfile). 0 when the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
 	float GetDashMinRunUp() const;
 
@@ -135,4 +133,7 @@ private:
 
 	/** Variables already reported as missing, so the warning is logged once. */
 	mutable TSet<FName> WarnedVariables;
+
+	/** Missing DashProfile already reported. */
+	mutable bool bWarnedNoDashProfile = false;
 };
