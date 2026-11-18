@@ -1,7 +1,12 @@
 /WreckingBall_Uproject/DerivedDataCache
 /WreckingBall_Uproject/Intermediate
 /WreckingBall_Uproject/Saved
-/WreckingBall_Uproject/Binaries
+/WreckingBall_Uproject/Binaries/*
+# Exception: the compiled editor module, so teammates without Visual Studio can open the project
+!/WreckingBall_Uproject/Binaries/Win64/
+/WreckingBall_Uproject/Binaries/Win64/*
+!/WreckingBall_Uproject/Binaries/Win64/UnrealEditor-WreckingBall.dll
+!/WreckingBall_Uproject/Binaries/Win64/UnrealEditor.modules
 /WreckingBall_Uproject/.vs
 /WreckingBall_Uproject/.vscode
 /WreckingBall_Uproject/Backup
@@ -11,3 +16,5 @@
 *.code-workspace
 /WreckingBall_Uproject/Docs/Devis
 /WreckingBall_Uproject/.mcp.json
+/WreckingBall_Uproject/Build/Windows/FileOpenOrder/CookerOpenOrder.log
+/WreckingBall_Uproject/Build/Windows/FileOpenOrder/EditorOpenOrder.log
