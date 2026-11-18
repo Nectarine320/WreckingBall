@@ -154,6 +154,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
 	bool IsHoldingAnything() const;
 
+	/**
+	 * Mass in kg of the object just grabbed AtPoint (dragged): the move speed is then multiplied by the GrabbedMoveSpeedCurve of the state profile
+	 * while the player holds an object. 0 = no drag slowdown (Centered grab). Reset to 0 when the hands become empty.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerState")
+	void SetHeldObjectMass(float MassKg);
+
+	/** Move speed multiplier of the floor under the feet (set by UWB_SurfaceMovementComponent, lot 12.1). Combined with the state and possession multipliers. */
+	UFUNCTION(BlueprintCallable, Category = "PlayerState")
+	void SetSurfaceSpeedMultiplier(float Multiplier);
+
 	/** The state profile (PlayerStateProfile). Null when it is not assigned (a warning is logged once). */
 	UFUNCTION(BlueprintPure, Category = "PlayerState")
 	const UWB_PlayerStateProfile* GetActiveProfile() const;
@@ -205,6 +216,12 @@ private:
 
 	/** Next time a catch request may be fired again (the pickup refuses some balls). */
 	double NextCatchRequestTime = 0.0;
+
+	/** Move speed multiplier of the dragged object (GrabbedMoveSpeedCurve at SetHeldObjectMass). 1 when nothing is dragged. */
+	float HeldObjectSpeedMultiplier = 1.f;
+
+	/** Move speed multiplier of the current floor surface. 1 on a normal floor. */
+	float SurfaceSpeedMultiplier = 1.f;
 
 	/** Forced run of the Celebrating state, called every frame. */
 	void TickCelebrationRun(float DeltaTime);

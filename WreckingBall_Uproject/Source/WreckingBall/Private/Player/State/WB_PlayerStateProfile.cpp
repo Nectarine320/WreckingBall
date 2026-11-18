@@ -4,6 +4,13 @@
 
 UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 {
+	// Drag slowdown by mass (lot 11.4, to calibrate): light objects barely slow the player, a 140 kg sofa about halves the speed.
+	FRichCurve* DragCurve = GrabbedMoveSpeedCurve.GetRichCurve();
+	DragCurve->AddKey(0.f, 1.f);
+	DragCurve->AddKey(40.f, 1.f);
+	DragCurve->AddKey(140.f, 0.55f);
+	DragCurve->AddKey(400.f, 0.35f);
+
 	using namespace WBTags;
 
 	auto MakeContainer = [](std::initializer_list<FGameplayTag> Tags)

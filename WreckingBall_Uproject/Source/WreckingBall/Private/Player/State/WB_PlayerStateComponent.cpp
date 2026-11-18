@@ -226,7 +226,9 @@ float UWB_PlayerStateComponent::GetMoveSpeedMultiplier() const
 	// Possession penalty (lot 11.2), combined with the other multipliers.
 	const UWB_PlayerStateProfile* HoldingProfile = GetActiveProfile();
 	const float Holding = HoldingProfile && CurrentHolding.MatchesTag(WBTags::Player_Holding_Ball) ? HoldingProfile->HoldingBallMoveSpeedMultiplier : 1.f;
-	return Holding * GetStateMoveSpeedMultiplier();
+	// Drag slowdown of a heavy object held AtPoint (lot 11.4).
+	const float Dragging = CurrentHolding.MatchesTag(WBTags::Player_Holding_Object) ? HeldObjectSpeedMultiplier : 1.f;
+	return Holding * Dragging * SurfaceSpeedMultiplier * GetStateMoveSpeedMultiplier();
 }
 
 float UWB_PlayerStateComponent::GetStateMoveSpeedMultiplier() const
@@ -376,6 +378,10 @@ bool UWB_PlayerStateComponent::ChangeHolding(FGameplayTag NewHolding)
 
 	const FGameplayTag OldHolding = CurrentHolding;
 	CurrentHolding = NewHolding;
+	if (NewHolding == WBTags::Player_Holding_None)
+	{
+		HeldObjectSpeedMultiplier = 1.f;
+	}
 	RefreshTickEnabled();
 	OnHoldingChanged.Broadcast(OldHolding, NewHolding);
 	return true;
@@ -384,6 +390,19 @@ bool UWB_PlayerStateComponent::ChangeHolding(FGameplayTag NewHolding)
 bool UWB_PlayerStateComponent::IsInState(FGameplayTag State) const
 {
 	return State.IsValid() && CurrentState.MatchesTag(State);
+}
+
+void UWB_PlayerStateComponent::SetSurfaceSpeedMultiplier(float Multiplier)
+{
+	SurfaceSpeedMultiplier = FMath::Max(Multiplier, 0.f);
+}
+
+void UWB_PlayerStateComponent::SetHeldObjectMass(float MassKg)
+{
+	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	HeldObjectSpeedMultiplier = Profile && MassKg > 0.f
+		? FMath::Max(Profile->GrabbedMoveSpeedCurve.GetRichCurveConst()->Eval(MassKg, 1.f), 0.f)
+		: 1.f;
 }
 
 bool UWB_PlayerStateComponent::IsHoldingAnything() const
