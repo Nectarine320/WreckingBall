@@ -50,13 +50,9 @@ public:
 
 	// ---- Ball ----
 
-	/** Distance to the ball under which the bot faces it and sends Grab. */
+	/** Distance to the ball under which the bot stops following its path and walks straight into the ball (the catch is automatic). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Ball", meta = (ClampMin = "0"))
 	float GrabRange = 130.f;
-
-	/** Seconds between two Grab attempts. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Ball", meta = (ClampMin = "0"))
-	float GrabRetryInterval = 0.4f;
 
 	// ---- Dash ----
 

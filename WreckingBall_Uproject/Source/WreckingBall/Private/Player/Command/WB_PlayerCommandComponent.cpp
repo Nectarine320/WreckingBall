@@ -52,11 +52,6 @@ void UWB_PlayerCommandComponent::Grab()
 	OnGrabCommand.Broadcast();
 }
 
-void UWB_PlayerCommandComponent::Tap()
-{
-	OnTapCommand.Broadcast();
-}
-
 void UWB_PlayerCommandComponent::KickPress()
 {
 	OnKickPressCommand.Broadcast();

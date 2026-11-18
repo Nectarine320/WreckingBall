@@ -11,6 +11,7 @@ class UWB_PlayerEnergyProfile;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnPlayerStateChanged, FGameplayTag, OldState, FGameplayTag, NewState);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnHoldingChanged, FGameplayTag, OldHolding, FGameplayTag, NewHolding);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnActionRefused, FGameplayTag, RequestedState);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnBallCatchRequested, AActor*, Ball);
 
 /**
  * Single source of truth of what a player does (Player.State.*) and holds (Player.Holding.*), Phase C step 9.
@@ -52,6 +53,13 @@ public:
 	/** Called when a player request (TryEnterState) is refused, e.g. a Dash while holding something. No listener yet: hook for a future sound or icon. */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerState")
 	FWB_OnActionRefused OnActionRefused;
+
+	/**
+	 * Fired when a free ball enters the catch zone in front of the player (Free state, empty hands, ball neither held nor kicked,
+	 * kicker re-catch delay over). Bind to the ball pickup (BPC_GrabObject.PickUpSoccerBall). Fired again every short while as long as it lasts.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "PlayerState|Possession")
+	FWB_OnBallCatchRequested OnBallCatchRequested;
 
 	/** Kick / throw charge from 0 (just pressed) to 1 (full charge), set by BPC_GrabObject while Kicking or Throwing. Slows the player down (GetMoveSpeedMultiplier). Back to 0 when the state ends. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "PlayerState")
@@ -188,6 +196,15 @@ private:
 
 	/** Ticks only for the debug text or the Celebrating run. */
 	void RefreshTickEnabled();
+
+	/** True when the automatic ball catch is active: state profile with a BallClass, Free state, empty hands. */
+	bool CanCatchBallNow() const;
+
+	/** Looks for a catchable ball in the catch zone and fires OnBallCatchRequested. */
+	void TickBallCatch();
+
+	/** Next time a catch request may be fired again (the pickup refuses some balls). */
+	double NextCatchRequestTime = 0.0;
 
 	/** Forced run of the Celebrating state, called every frame. */
 	void TickCelebrationRun(float DeltaTime);

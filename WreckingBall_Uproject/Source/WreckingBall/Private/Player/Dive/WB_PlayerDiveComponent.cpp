@@ -15,6 +15,7 @@
 #include "Materials/MaterialInterface.h"
 #include "TimerManager.h"
 #include "Player/Dive/WB_PlayerDiveProfile.h"
+#include "Ball/WB_BallPossessionSubsystem.h"
 #include "Player/State/WB_PlayerStateComponent.h"
 #include "Player/State/WB_PlayerStateTags.h"
 
@@ -742,9 +743,7 @@ void UWB_PlayerDiveComponent::TickDefense(float DeltaTime)
 
 	UPrimitiveComponent* Ball = FindClosestBall(Character->GetActorLocation(), Profile->MaxBallDistance);
 
-	const FVector Forward = Character->GetActorForwardVector().GetSafeNormal2D();
-
-	// Block: the spread body is a box (width of the X, thickness, capsule height plus the raised hands) facing the ball.
+	// Catch: the spread body is a box (width of the X, thickness, capsule height plus the raised hands) facing the ball.
 	if (Ball && Ball->IsSimulatingPhysics())
 	{
 		const float HalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
@@ -754,18 +753,18 @@ void UWB_PlayerDiveComponent::TickDefense(float DeltaTime)
 		const FVector BallCenter = Ball->GetComponentLocation();
 		const FVector Local = Facing.UnrotateVector(BallCenter - Center);
 		const FVector ClosestLocal(FMath::Clamp(Local.X, -Extent.X, Extent.X), FMath::Clamp(Local.Y, -Extent.Y, Extent.Y), FMath::Clamp(Local.Z, -Extent.Z, Extent.Z));
-		FVector Closest = Center + Facing.RotateVector(ClosestLocal);
+		const FVector Closest = Center + Facing.RotateVector(ClosestLocal);
 		if (FVector::DistSquared(BallCenter, Closest) <= FMath::Square(Ball->Bounds.SphereRadius))
 		{
-			if (Closest.Equals(BallCenter, 1.f))
+			// Interception (user rule 2026-11-17): the defender catches the ball, kicked or not, unless another player holds it.
+			AActor* BallActor = Ball->GetOwner();
+			if (!UWB_BallPossessionSubsystem::IsBallHeld(this, BallActor))
 			{
-				// Ball center inside the box: push it out through the front or the back face.
-				Closest = BallCenter - Forward * FMath::Sign(Local.X == 0.f ? 1.f : Local.X);
-			}
-			if (BounceBall(Ball, Closest, Character->GetVelocity()))
-			{
-				UE_LOG(LogWBPlayerDive, Verbose, TEXT("%s blocked %s."), *GetNameSafe(Character), *GetNameSafe(Ball->GetOwner()));
-				OnDefenseBallBlocked.Broadcast(Ball->GetOwner());
+				UE_LOG(LogWBPlayerDive, Verbose, TEXT("%s caught %s in defense."), *GetNameSafe(Character), *GetNameSafe(BallActor));
+				UWB_BallPossessionSubsystem::ClearBallKick(this, BallActor);
+				EndDefense(true);
+				OnDefenseBallCaught.Broadcast(BallActor);
+				return;
 			}
 		}
 

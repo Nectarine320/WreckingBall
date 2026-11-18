@@ -31,7 +31,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWB_OnDiveStarted);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDiveBallTouched, AActor*, Ball);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDiveLanded, bool, bTouchedBall);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDiveFinished, bool, bTouchedBall);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDefenseBallBlocked, AActor*, Ball);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDefenseBallCaught, AActor*, Ball);
 
 /**
  * Dive button (IA_Dive), two moves (user decision 2026-11-17, Docs/Plans/plan-plongeon.md):
@@ -79,9 +79,12 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "PlayerDive")
 	FWB_OnDiveFinished OnDiveFinished;
 
-	/** Called when the defense stance blocked a ball (the ball has already bounced off). */
+	/**
+	 * Called when a ball (kicked or not, not held) touches the body in the defense stance: the stance has already ended (back to Free).
+	 * Bind to the ball pickup (BPC_GrabObject.PickUpSoccerBall): the interception gives the ball to the defender.
+	 */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerDive|Defense")
-	FWB_OnDefenseBallBlocked OnDefenseBallBlocked;
+	FWB_OnDefenseBallCaught OnDefenseBallCaught;
 
 	/**
 	 * True when the player is pushing the move input (stick or keys: X or Y axis not zero), read from the last move input. Decides what the dive button

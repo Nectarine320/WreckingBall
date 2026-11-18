@@ -251,15 +251,8 @@ void AWB_SoccerAIController_Base::TickSeekBall(ACharacter* Me, float DeltaSecond
 	const FVector ToBall = Ball->GetActorLocation() - Me->GetActorLocation();
 	if (ToBall.Size2D() <= Profile->GrabRange)
 	{
-		// The grab sphere sits in front of the player: face the ball, then grab.
-		Commands->StopMoving();
-		Commands->SetFacingDirection(ToBall);
-		const double Now = GetWorld()->GetTimeSeconds();
-		if (Now >= NextGrabTime)
-		{
-			NextGrabTime = Now + Profile->GrabRetryInterval;
-			Commands->Grab();
-		}
+		// Close: walk straight into the ball, the catch zone in front of the player takes it automatically.
+		Commands->MoveInWorldDirection(ToBall);
 		return;
 	}
 	MoveTowardLocation(Me, Ball->GetActorLocation());
@@ -274,18 +267,12 @@ void AWB_SoccerAIController_Base::TickChaseCarrier(ACharacter* Me, float DeltaSe
 		return;
 	}
 
-	FVector AimPoint;
-	if (EvaluateDash(const_cast<APawn*>(Carrier), AimPoint))
+	if (TryDashOn(Me, const_cast<APawn*>(Carrier)))
 	{
-		// Dash along the actor forward: face the predicted spot with a random error, so some Dashes miss.
-		const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-		NextDashTime = GetWorld()->GetTimeSeconds() + Profile->DashCooldown;
-		const float Jitter = FMath::FRandRange(-Profile->DashAngleJitter, Profile->DashAngleJitter);
-		Commands->StopMoving();
-		Commands->SetFacingDirection((AimPoint - Me->GetActorLocation()).GetSafeNormal2D().RotateAngleAxis(Jitter, FVector::UpVector));
-		Commands->Dash();
 		return;
 	}
+	// Predicted spot of the carrier, computed by the EvaluateDash of TryDashOn.
+	const FVector AimPoint = LastDashAimPoint;
 	// Too close for the minimum run-up: step back to make room for the Dash.
 	if (DashBlockReason == TEXT("Too close"))
 	{
@@ -294,6 +281,23 @@ void AWB_SoccerAIController_Base::TickChaseCarrier(ACharacter* Me, float DeltaSe
 	}
 	// Not favorable yet: keep chasing, toward where the carrier is going (the path finds a way around a blocked line).
 	MoveTowardLocation(Me, AimPoint);
+}
+
+bool AWB_SoccerAIController_Base::TryDashOn(ACharacter* Me, APawn* Target)
+{
+	FVector AimPoint;
+	if (!EvaluateDash(Target, AimPoint))
+	{
+		return false;
+	}
+	// Dash along the actor forward: face the predicted spot with a random error, so some Dashes miss.
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	NextDashTime = GetWorld()->GetTimeSeconds() + Profile->DashCooldown;
+	const float Jitter = FMath::FRandRange(-Profile->DashAngleJitter, Profile->DashAngleJitter);
+	Commands->StopMoving();
+	Commands->SetFacingDirection((AimPoint - Me->GetActorLocation()).GetSafeNormal2D().RotateAngleAxis(Jitter, FVector::UpVector));
+	Commands->Dash();
+	return true;
 }
 
 bool AWB_SoccerAIController_Base::EvaluateDash(APawn* Target, FVector& AimPoint)
@@ -455,21 +459,29 @@ bool AWB_SoccerAIController_Base::IsDashLineBlocked(const ACharacter* Me, const 
 
 void AWB_SoccerAIController_Base::TickSupport(ACharacter* Me, float DeltaSeconds)
 {
-	const APawn* Carrier = FindBallCarrier();
-	const UWB_TeamGoalComponent* Goal = GetGoalToAttack();
-	if (!Carrier || !Goal)
+	const APawn* Anchor = FindBallCarrier();
+	if (!Anchor)
 	{
 		Commands->StopMoving();
 		return;
 	}
+	MoveToSupportSpot(Me, Anchor->GetActorLocation());
+}
 
+void AWB_SoccerAIController_Base::MoveToSupportSpot(ACharacter* Me, const FVector& Anchor)
+{
+	const UWB_TeamGoalComponent* Goal = GetGoalToAttack();
+	if (!Goal)
+	{
+		Commands->StopMoving();
+		return;
+	}
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	const FVector CarrierLocation = Carrier->GetActorLocation();
-	const FVector Forward = (Goal->GetAimLocation() - CarrierLocation).GetSafeNormal2D();
+	const FVector Forward = (Goal->GetAimLocation() - Anchor).GetSafeNormal2D();
 	const FVector Side = FVector::CrossProduct(FVector::UpVector, Forward);
 	// Stay on the side the bot is already on.
-	const float SideSign = FVector::DotProduct(Me->GetActorLocation() - CarrierLocation, Side) >= 0.f ? 1.f : -1.f;
-	const FVector Spot = CarrierLocation + Forward * Profile->SupportLeadDistance + Side * SideSign * Profile->SupportLateralOffset;
+	const float SideSign = FVector::DotProduct(Me->GetActorLocation() - Anchor, Side) >= 0.f ? 1.f : -1.f;
+	const FVector Spot = Anchor + Forward * Profile->SupportLeadDistance + Side * SideSign * Profile->SupportLateralOffset;
 	MoveTowardLocation(Me, Spot);
 }
 

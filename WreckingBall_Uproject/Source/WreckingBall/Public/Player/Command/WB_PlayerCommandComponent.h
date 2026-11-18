@@ -35,10 +35,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
 	FWB_OnPlayerCommand OnGrabCommand;
 
-	/** Tap command (lot 11.1): kicks the ball on the ground in front of the player without taking it. Bind to RequestTap. */
-	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
-	FWB_OnPlayerCommand OnTapCommand;
-
 	/** Kick / throw press: starts the charge. Bind to RequestKickOrThrow. */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
 	FWB_OnPlayerCommand OnKickPressCommand;
@@ -62,10 +58,6 @@ public:
 	/** Fires OnGrabCommand. */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
 	void Grab();
-
-	/** Fires OnTapCommand. */
-	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
-	void Tap();
 
 	/** Fires OnKickPressCommand. */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")

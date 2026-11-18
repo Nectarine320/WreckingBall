@@ -29,6 +29,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Transitions", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesRequiringHolding;
 
+	// ---- Possession (lot 11.1: automatic catch) ----
+
+	/** Ball actors caught automatically by walking into them (BP_PO_Master_Ball_01 and its children). Empty: no automatic catch. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Possession")
+	TSubclassOf<AActor> BallClass;
+
+	/** Radius in cm of the catch zone in front of the player: a free ball whose center enters it is caught (Free state, empty hands, ball not kicked). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Possession", meta = (ClampMin = "0", Units = "Centimeters"))
+	float BallCatchRadius = 60.f;
+
+	/** Distance in cm from the capsule center to the center of the catch zone, toward the facing. 0 = centered on the player. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Possession", meta = (Units = "Centimeters"))
+	float BallCatchForwardOffset = 40.f;
+
+	/** Seconds after a kick during which the kicker cannot catch its own ball again (even after a weak kick). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Possession", meta = (ClampMin = "0", Units = "Seconds"))
+	float KickerRecatchDelay = 0.5f;
+
 	/** States where the move and look inputs have no effect. Default: Disabled, Down, Stunned, Recoiling, Diving. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesBlockingMovement;

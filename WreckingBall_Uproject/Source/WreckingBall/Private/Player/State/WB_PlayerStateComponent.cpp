@@ -1,6 +1,9 @@
 #include "Player/State/WB_PlayerStateComponent.h"
 
+#include "Ball/WB_BallPossessionSubsystem.h"
+#include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
+#include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Character.h"
@@ -258,7 +261,49 @@ void UWB_PlayerStateComponent::SetCelebrationSteering(FVector WorldDirection)
 
 void UWB_PlayerStateComponent::RefreshTickEnabled()
 {
-	SetComponentTickEnabled(bDebugShowState || CurrentState == WBTags::Player_State_Celebrating);
+	SetComponentTickEnabled(bDebugShowState || CurrentState == WBTags::Player_State_Celebrating || CanCatchBallNow());
+}
+
+bool UWB_PlayerStateComponent::CanCatchBallNow() const
+{
+	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	return Profile && Profile->BallClass && CurrentState == WBTags::Player_State_Free && !IsHoldingAnything();
+}
+
+void UWB_PlayerStateComponent::TickBallCatch()
+{
+	UWorld* World = GetWorld();
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
+	const UWB_PlayerStateProfile* Profile = GetActiveProfile();
+	const UWB_BallPossessionSubsystem* Possession = World ? World->GetSubsystem<UWB_BallPossessionSubsystem>() : nullptr;
+	if (!Character || !Profile || !Possession || World->GetTimeSeconds() < NextCatchRequestTime)
+	{
+		return;
+	}
+
+	// Catch zone: a vertical cylinder in front of the player, as tall as the capsule (plus the ball radius below the feet).
+	const float HalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector Center = Character->GetActorLocation() + Character->GetActorForwardVector().GetSafeNormal2D() * Profile->BallCatchForwardOffset;
+	for (TActorIterator<AActor> It(World, Profile->BallClass); It; ++It)
+	{
+		AActor* Ball = *It;
+		const UPrimitiveComponent* Body = UWB_BallPossessionSubsystem::FindBallBody(Ball);
+		const FVector BallLocation = Body ? Body->GetComponentLocation() : Ball->GetActorLocation();
+		const float BallRadius = Body ? Body->Bounds.SphereRadius : 0.f;
+		if (FVector::Dist2D(BallLocation, Center) > Profile->BallCatchRadius + BallRadius
+			|| FMath::Abs(BallLocation.Z - Center.Z) > HalfHeight + BallRadius)
+		{
+			continue;
+		}
+		if (!Possession->CanBeCaughtByWalking(Ball, Character, Profile->KickerRecatchDelay))
+		{
+			continue;
+		}
+		// Retry cadence when the pickup refuses the ball (technical, not a feel value).
+		NextCatchRequestTime = World->GetTimeSeconds() + 0.1;
+		OnBallCatchRequested.Broadcast(Ball);
+		return;
+	}
 }
 
 void UWB_PlayerStateComponent::TickCelebrationRun(float DeltaTime)
@@ -331,6 +376,7 @@ bool UWB_PlayerStateComponent::ChangeHolding(FGameplayTag NewHolding)
 
 	const FGameplayTag OldHolding = CurrentHolding;
 	CurrentHolding = NewHolding;
+	RefreshTickEnabled();
 	OnHoldingChanged.Broadcast(OldHolding, NewHolding);
 	return true;
 }
@@ -358,6 +404,10 @@ void UWB_PlayerStateComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	if (CurrentState == WBTags::Player_State_Celebrating)
 	{
 		TickCelebrationRun(DeltaTime);
+	}
+	if (CanCatchBallNow())
+	{
+		TickBallCatch();
 	}
 
 #if ENABLE_DRAW_DEBUG

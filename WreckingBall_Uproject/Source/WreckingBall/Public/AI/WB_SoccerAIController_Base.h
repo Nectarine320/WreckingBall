@@ -17,7 +17,7 @@ enum class EWB_SoccerAIIntent : uint8
 {
 	/** Nothing to do (no ball, or the player state blocks actions). */
 	Idle,
-	/** The ball is free: run to it and grab it. */
+	/** The ball is free: run into it (the catch is automatic). */
 	SeekBall,
 	/** An opponent carries the ball: chase it and Dash on it when in range. */
 	ChaseCarrier,
@@ -119,7 +119,6 @@ private:
 	FVector PathTarget = FVector::ZeroVector;
 	double NextRepathTime = 0.0;
 
-	double NextGrabTime = 0.0;
 	double NextDashTime = 0.0;
 
 	/** Predicted target position of the last EvaluateDash (debug). */
@@ -143,6 +142,12 @@ private:
 	void TickSeekBall(ACharacter* Me, float DeltaSeconds);
 	void TickChaseCarrier(ACharacter* Me, float DeltaSeconds);
 	void TickSupport(ACharacter* Me, float DeltaSeconds);
+
+	/** Runs to the support spot ahead of Anchor (the carrier), toward the opponent goal. */
+	void MoveToSupportSpot(ACharacter* Me, const FVector& Anchor);
+
+	/** Turns and Dashes on Target when EvaluateDash allows it. Returns true when the Dash was sent. */
+	bool TryDashOn(ACharacter* Me, APawn* Target);
 	void TickAttack(ACharacter* Me, float DeltaSeconds);
 	void TickCharge(ACharacter* Me, float DeltaSeconds);
 
