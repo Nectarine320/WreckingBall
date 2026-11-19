@@ -135,10 +135,25 @@ bool UWB_BallPossessionSubsystem::IsBallKicked(const UObject* WorldContextObject
 
 bool UWB_BallPossessionSubsystem::IsBallHeld(const UObject* WorldContextObject, const AActor* Ball)
 {
+	return GetBallPossessor(WorldContextObject, Ball) != nullptr;
+}
+
+AActor* UWB_BallPossessionSubsystem::GetBallPossessor(const UObject* WorldContextObject, const AActor* Ball)
+{
 	UWorld* World = WorldContextObject ? WorldContextObject->GetWorld() : nullptr;
 	if (!World || !Ball)
 	{
-		return false;
+		return nullptr;
+	}
+	if (const UWB_BallPossessionSubsystem* Self = World->GetSubsystem<UWB_BallPossessionSubsystem>())
+	{
+		if (const TWeakObjectPtr<AActor>* Dribbler = Self->Dribblers.Find(Ball))
+		{
+			if (AActor* Player = Dribbler->Get())
+			{
+				return Player;
+			}
+		}
 	}
 	for (TActorIterator<APawn> It(World); It; ++It)
 	{
@@ -148,11 +163,30 @@ bool UWB_BallPossessionSubsystem::IsBallHeld(const UObject* WorldContextObject, 
 			const UPrimitiveComponent* Grabbed = Handle ? Handle->GetGrabbedComponent() : nullptr;
 			if (Grabbed && Grabbed->GetOwner() == Ball)
 			{
-				return true;
+				return *It;
 			}
 		}
 	}
-	return false;
+	return nullptr;
+}
+
+void UWB_BallPossessionSubsystem::SetBallDribbler(const UObject* WorldContextObject, AActor* Ball, AActor* Player)
+{
+	UWB_BallPossessionSubsystem* Self = Get(WorldContextObject);
+	if (Self && Ball && Player)
+	{
+		Self->Dribblers.Add(Ball, Player);
+	}
+}
+
+void UWB_BallPossessionSubsystem::ClearBallDribbler(const UObject* WorldContextObject, const AActor* Ball, const AActor* Player)
+{
+	UWB_BallPossessionSubsystem* Self = Get(WorldContextObject);
+	const TWeakObjectPtr<AActor>* Dribbler = Self ? Self->Dribblers.Find(Ball) : nullptr;
+	if (Dribbler && (!Dribbler->IsValid() || Dribbler->Get() == Player))
+	{
+		Self->Dribblers.Remove(Ball);
+	}
 }
 
 bool UWB_BallPossessionSubsystem::CanBeCaughtByWalking(const AActor* Ball, const AActor* Player, float KickerRecatchDelay) const
@@ -178,6 +212,14 @@ void UWB_BallPossessionSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	TickTrails();
+
+	for (auto It = Dribblers.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid() || !It.Value().IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
 
 	const double Now = GetWorld()->GetTimeSeconds();
 	for (auto It = Records.CreateIterator(); It; ++It)

@@ -60,9 +60,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
 	static bool IsBallKicked(const UObject* WorldContextObject, const AActor* Ball);
 
-	/** True when a player holds Ball (one of the players' Physics Handles grabs it). */
+	/** True when a player holds Ball: a player dribbles it (UWB_BallDribbleComponent), or one of the players' Physics Handles grabs it. */
 	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
 	static bool IsBallHeld(const UObject* WorldContextObject, const AActor* Ball);
+
+	/** Player who possesses Ball: its dribbler, or the pawn whose Physics Handle grabs it. None when the ball is free. */
+	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
+	static AActor* GetBallPossessor(const UObject* WorldContextObject, const AActor* Ball);
+
+	/** Records Player as the dribbler of Ball (called by UWB_BallDribbleComponent::StartDribble). */
+	static void SetBallDribbler(const UObject* WorldContextObject, AActor* Ball, AActor* Player);
+
+	/** Forgets the dribbler of Ball, only if it is still Player (called by UWB_BallDribbleComponent::StopDribble). */
+	static void ClearBallDribbler(const UObject* WorldContextObject, const AActor* Ball, const AActor* Player);
 
 	/**
 	 * Hands the speed trail of Ball to the subsystem (call once, at BeginPlay). Each frame, the trail turns on when the ball goes faster than
@@ -85,6 +95,9 @@ public:
 private:
 	TMap<TWeakObjectPtr<AActor>, FWB_BallKickRecord> Records;
 	TMap<TWeakObjectPtr<AActor>, FWB_BallTrailRecord> Trails;
+
+	/** Ball -> player who dribbles it. */
+	TMap<TWeakObjectPtr<AActor>, TWeakObjectPtr<AActor>> Dribblers;
 
 	void TickTrails();
 
