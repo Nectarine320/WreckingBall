@@ -6,11 +6,13 @@
 
 class UDecalComponent;
 class UMaterialInstanceDynamic;
+class UStaticMeshComponent;
 class UWB_GroundRingProfile;
 
 /**
- * Procedural ring drawn on the ground with a decal (UI 3D devis, lot A): team ring and kick gauge under a player, marker under the active ball.
- * Creates its UDecalComponent and the dynamic material once, at BeginPlay. The decal always projects straight down, whatever the owner's rotation.
+ * Procedural ring drawn on the ground (UI 3D devis, lot A): team ring and kick gauge under a player, marker under the active ball.
+ * Creates a UDecalComponent, or a flat UStaticMeshComponent with the profile's bUseMesh (no TSR ghosting), and the dynamic material once, at BeginPlay.
+ * The ring always faces straight down, whatever the owner's rotation.
  * Place the component at the feet (player). With the profile's bSnapToGround, the decal follows the ground under the owner instead (ball).
  * Drives the M_GroundRing parameters RingColor, KickPercent and ShadowStrength.
  */
@@ -42,9 +44,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "GroundRing")
 	bool IsRingActive() const { return bRingActive; }
 
-	/** The decal created at BeginPlay. None before BeginPlay or without a profile. */
+	/** The decal created at BeginPlay. None before BeginPlay, without a profile, or in mesh mode (bUseMesh). */
 	UFUNCTION(BlueprintPure, Category = "GroundRing")
 	UDecalComponent* GetDecal() const { return Decal; }
+
+	/** The flat mesh created at BeginPlay in mesh mode (bUseMesh). None otherwise. */
+	UFUNCTION(BlueprintPure, Category = "GroundRing")
+	UStaticMeshComponent* GetRingMesh() const { return RingMesh; }
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -55,6 +61,13 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UDecalComponent> Decal;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> RingMesh;
+
+	/** The decal or the mesh, whichever was created: what is moved and shown. */
+	UPROPERTY(Transient)
+	TObjectPtr<USceneComponent> RingVisual;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> RingMaterial;
@@ -68,6 +81,10 @@ private:
 	float BaseShadowStrength = 0.f;
 
 	bool UsesSnap() const;
+
+	/** Creates the decal (default) or the flat mesh (bUseMesh). Returns false and logs a warning when the profile misses an asset. */
+	bool CreateDecal(AActor* Owner);
+	bool CreateMesh(AActor* Owner);
 
 	/** Shows the decal when active (and on the ground for a snapped ring), and turns the tick on only while snapping. */
 	void RefreshState();

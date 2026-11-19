@@ -6,6 +6,7 @@
 #include "WB_GroundRingProfile.generated.h"
 
 class UMaterialInterface;
+class UStaticMesh;
 
 /**
  * Settings of a ground ring decal (UI 3D devis, lot A): DA_GroundRing_Player under each player, DA_GroundRing_Ball under the active ball.
@@ -17,7 +18,7 @@ class WRECKINGBALL_API UWB_GroundRingProfile : public UPrimaryDataAsset
 	GENERATED_BODY()
 
 public:
-	/** Decal material (Deferred Decal domain, M_GroundRing parent): MI_GroundRing_Player, MI_GroundRing_Ball. Required: empty, no ring is created and a warning is logged. */
+	/** Decal material (Deferred Decal domain, M_GroundRing parent). Required when bUseMesh is off: empty, no ring is created and a warning is logged. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing")
 	TObjectPtr<UMaterialInterface> DecalMaterial = nullptr;
 
@@ -36,6 +37,32 @@ public:
 	/** On: the ring shows at BeginPlay (players). Off: hidden until SetRingActive(true) (active ball marker). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing")
 	bool bStartActive = true;
+
+	// ---- Mesh mode ----
+
+	/**
+	 * Off (default): the ring is a decal projected on the ground (wraps on steps and rugs, but TSR ghosts it when it moves: a decal writes no motion vectors).
+	 * On: the ring is a flat mesh (RingMesh) with a translucent material that outputs velocity and uses Responsive AA: no ghosting, but it stays flat
+	 * (it does not wrap on a step edge). Uses MeshMaterial instead of DecalMaterial, and ignores ProjectionHalfHeight and SortOrder.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Mesh")
+	bool bUseMesh = false;
+
+	/** Flat mesh facing up, centered on its pivot (/Engine/BasicShapes/Plane). Scaled so its width matches 2 x Radius. Required in mesh mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Mesh", meta = (EditCondition = "bUseMesh"))
+	TObjectPtr<UStaticMesh> RingMesh = nullptr;
+
+	/** Surface material, translucent and unlit, with Output Velocity and Responsive AA (M_GroundRing_Mesh parent): MI_GroundRing_Player, MI_GroundRing_Ball. Required in mesh mode. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Mesh", meta = (EditCondition = "bUseMesh"))
+	TObjectPtr<UMaterialInterface> MeshMaterial = nullptr;
+
+	/** Height of the mesh above the ground, in cm: keeps it from flickering through the floor. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Mesh", meta = (ClampMin = "0", Units = "Centimeters", EditCondition = "bUseMesh"))
+	float MeshHeightOffset = 1.f;
+
+	/** Draw order against the other translucent objects in mesh mode: higher draws on top. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Mesh", meta = (EditCondition = "bUseMesh"))
+	int32 MeshSortPriority = 10;
 
 	// ---- Snap to ground ----
 

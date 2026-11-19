@@ -2,6 +2,8 @@
 
 #include "CollisionQueryParams.h"
 #include "Components/DecalComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -35,10 +37,35 @@ void UWB_GroundRingComponent::BeginPlay()
 	Super::BeginPlay();
 
 	AActor* Owner = GetOwner();
-	if (!Profile || !Profile->DecalMaterial || !Owner)
+	if (!Profile || !Owner)
 	{
-		UE_LOG(LogWBGroundRing, Warning, TEXT("%s: GroundRing needs a Profile with a DecalMaterial. No ring created."), *GetPathNameSafe(this));
+		UE_LOG(LogWBGroundRing, Warning, TEXT("%s: GroundRing needs a Profile. No ring created."), *GetPathNameSafe(this));
 		return;
+	}
+
+	const bool bCreated = Profile->bUseMesh ? CreateMesh(Owner) : CreateDecal(Owner);
+	if (!bCreated || !RingMaterial)
+	{
+		return;
+	}
+
+	RingMaterial->GetScalarParameterValue(FHashedMaterialParameterInfo(WBGroundRing::ShadowStrengthParam), BaseShadowStrength);
+	if (bHasRingColor)
+	{
+		RingMaterial->SetVectorParameterValue(WBGroundRing::RingColorParam, RingColor);
+	}
+	RingMaterial->SetScalarParameterValue(WBGroundRing::KickPercentParam, KickPercent);
+
+	bRingActive = Profile->bStartActive;
+	RefreshState();
+}
+
+bool UWB_GroundRingComponent::CreateDecal(AActor* Owner)
+{
+	if (!Profile->DecalMaterial)
+	{
+		UE_LOG(LogWBGroundRing, Warning, TEXT("%s: GroundRing profile %s has no DecalMaterial. No ring created."), *GetPathNameSafe(this), *GetNameSafe(Profile));
+		return false;
 	}
 
 	Decal = NewObject<UDecalComponent>(Owner, MakeUniqueObjectName(Owner, UDecalComponent::StaticClass(), TEXT("GroundRingDecal")));
@@ -54,19 +81,47 @@ void UWB_GroundRingComponent::BeginPlay()
 	Decal->SetDecalMaterial(Profile->DecalMaterial);
 	Decal->RegisterComponent();
 
+	RingVisual = Decal;
 	RingMaterial = Decal->CreateDynamicMaterialInstance();
-	if (RingMaterial)
+	return true;
+}
+
+bool UWB_GroundRingComponent::CreateMesh(AActor* Owner)
+{
+	if (!Profile->RingMesh || !Profile->MeshMaterial)
 	{
-		RingMaterial->GetScalarParameterValue(FHashedMaterialParameterInfo(WBGroundRing::ShadowStrengthParam), BaseShadowStrength);
-		if (bHasRingColor)
-		{
-			RingMaterial->SetVectorParameterValue(WBGroundRing::RingColorParam, RingColor);
-		}
-		RingMaterial->SetScalarParameterValue(WBGroundRing::KickPercentParam, KickPercent);
+		UE_LOG(LogWBGroundRing, Warning, TEXT("%s: GroundRing profile %s is in mesh mode but has no RingMesh or MeshMaterial. No ring created."),
+			*GetPathNameSafe(this), *GetNameSafe(Profile));
+		return false;
 	}
 
-	bRingActive = Profile->bStartActive;
-	RefreshState();
+	RingMesh = NewObject<UStaticMeshComponent>(Owner, MakeUniqueObjectName(Owner, UStaticMeshComponent::StaticClass(), TEXT("GroundRingMesh")));
+	RingMesh->SetupAttachment(this);
+	RingMesh->SetStaticMesh(Profile->RingMesh);
+	RingMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RingMesh->SetGenerateOverlapEvents(false);
+	RingMesh->SetCastShadow(false);
+	RingMesh->bReceivesDecals = false;
+	RingMesh->SetCanEverAffectNavigation(false);
+	RingMesh->SetTranslucentSortPriority(Profile->MeshSortPriority);
+	// Absolute rotation: flat on the ground whatever the owner's turns and rolls.
+	RingMesh->SetUsingAbsoluteRotation(true);
+	RingMesh->SetUsingAbsoluteLocation(UsesSnap());
+	RingMesh->SetWorldRotation(FRotator::ZeroRotator);
+	RingMesh->SetRelativeLocation(FVector(0.f, 0.f, Profile->MeshHeightOffset));
+
+	// Width of the mesh matches 2 x Radius, whatever the size of the source mesh.
+	const FVector Extent = Profile->RingMesh->GetBounds().BoxExtent;
+	const float HalfWidth = FMath::Max3(static_cast<float>(Extent.X), static_cast<float>(Extent.Y), 1.f);
+	const float Scale = Profile->Radius / HalfWidth;
+	RingMesh->SetWorldScale3D(FVector(Scale, Scale, 1.f));
+
+	RingMesh->SetMaterial(0, Profile->MeshMaterial);
+	RingMesh->RegisterComponent();
+
+	RingVisual = RingMesh;
+	RingMaterial = RingMesh->CreateDynamicMaterialInstance(0, Profile->MeshMaterial);
+	return true;
 }
 
 void UWB_GroundRingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -76,6 +131,12 @@ void UWB_GroundRingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Decal->DestroyComponent();
 		Decal = nullptr;
 	}
+	if (RingMesh)
+	{
+		RingMesh->DestroyComponent();
+		RingMesh = nullptr;
+	}
+	RingVisual = nullptr;
 	RingMaterial = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
@@ -116,7 +177,7 @@ void UWB_GroundRingComponent::SetRingActive(bool bActive)
 
 void UWB_GroundRingComponent::RefreshState()
 {
-	if (!Decal)
+	if (!RingVisual)
 	{
 		return;
 	}
@@ -128,19 +189,19 @@ void UWB_GroundRingComponent::RefreshState()
 	{
 		bShowDecal = UpdateSnap();
 	}
-	Decal->SetVisibility(bShowDecal);
+	RingVisual->SetVisibility(bShowDecal);
 }
 
 void UWB_GroundRingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-	if (Decal && bRingActive && UsesSnap())
+	if (RingVisual && bRingActive && UsesSnap())
 	{
 		const bool bOnGround = UpdateSnap();
-		if (Decal->IsVisible() != bOnGround)
+		if (RingVisual->IsVisible() != bOnGround)
 		{
-			Decal->SetVisibility(bOnGround);
+			RingVisual->SetVisibility(bOnGround);
 		}
 	}
 }
@@ -149,7 +210,7 @@ bool UWB_GroundRingComponent::UpdateSnap()
 {
 	UWorld* World = GetWorld();
 	AActor* Owner = GetOwner();
-	if (!World || !Owner || !Decal || !Profile)
+	if (!World || !Owner || !RingVisual || !Profile)
 	{
 		return false;
 	}
@@ -175,7 +236,8 @@ bool UWB_GroundRingComponent::UpdateSnap()
 	}
 
 	// The owner's X and Y, the ground's Z: the ring sits exactly under the owner.
-	Decal->SetWorldLocation(FVector(Start.X, Start.Y, Hit.ImpactPoint.Z));
+	const float HeightOffset = RingMesh ? Profile->MeshHeightOffset : 0.f;
+	RingVisual->SetWorldLocation(FVector(Start.X, Start.Y, Hit.ImpactPoint.Z + HeightOffset));
 
 	if (Profile->bFadeShadowWithHeight && RingMaterial)
 	{
