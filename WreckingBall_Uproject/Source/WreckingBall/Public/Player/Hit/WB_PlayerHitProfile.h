@@ -45,6 +45,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", ClampMax = "1"))
 	float DownPushCenterTolerance = 0.05f;
 
+	/** Horizontal speed in cm/s of the bump when a slammed door knocks the player Down: along the way the door moves (not sideways like the Dash). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
+	float SlamKnockbackStrength = 700.f;
+
+	/** Upward speed in cm/s of the slam bump: the player is airborne during the bump, and the Down timer starts on landing. 0: no jump. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
+	float SlamKnockbackUpStrength = 250.f;
+
 	/** Seconds after getting up during which the player cannot be stunned or knocked Down again (no fall loop). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Down", meta = (ClampMin = "0", Units = "Seconds"))
 	float PostDownGraceSeconds = 1.f;

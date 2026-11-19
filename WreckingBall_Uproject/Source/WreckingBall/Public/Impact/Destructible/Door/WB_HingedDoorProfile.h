@@ -49,21 +49,53 @@ public:
 
 	// ---- Lock ----
 
-	/** True: doors using this profile can start locked (Starts Locked on the door). A locked door does not move and acts like a wall until it is kicked open. */
+	/** True: doors using this profile can start locked (Starts Locked on the door). A locked door does not move and acts like a wall until its lock breaks (then it is torn off). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Lock")
 	bool bCanBeLocked = false;
 
-	/** Damage the lock takes before it breaks (Dash, ball, thrown object). The door health goes down at the same time: keep the door MaxHealth higher so the lock breaks first. */
+	/** Damage the lock takes before it breaks (Dash, ball, thrown object). When it breaks, the door is torn off its hinges and becomes a loose physics block. The door health goes down at the same time. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Lock", meta = (EditCondition = "bCanBeLocked", EditConditionHides, ClampMin = "0"))
 	float LockHealth = 60.f;
 
-	/** Speed in degrees per second the door swings open at when its lock breaks, away from the hit. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Lock", meta = (EditCondition = "bCanBeLocked", EditConditionHides, ClampMin = "0", Units = "DegreesPerSecond"))
-	float KickOpenAngularSpeed = 400.f;
+	// ---- Dash ----
+
+	/**
+	 * Angle in degrees the door is forced open to, away from the dasher, when a player dashes through an unlocked door. The swing is driven by code
+	 * (kinematic): nothing stops it; the ball and objects in the way are pushed, players in the way are knocked Down (slam). Then the door simulates again
+	 * and the spring brings it back. Capped by SwingLimitAngle. Above about 95 degrees the door goes into thick blocker boxes of the wall: keep them thin.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Dash", meta = (ClampMin = "0", ClampMax = "170", Units = "Degrees"))
+	float DashOpenAngle = 90.f;
+
+	/** Speed in degrees per second of the forced opening on a Dash (90 degrees at 500: about 0.18 s). Keep it above SlamMinAngularSpeed so the forced opening slams. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Dash", meta = (ClampMin = "1", Units = "DegreesPerSecond"))
+	float DashKickAngularSpeed = 500.f;
+
+	/** Seconds a dasher keeps the priority on the door: during this window, a dash from the other side is slammed by the door instead of going through. Dashes in the same frame: the strongest impact wins. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Dash", meta = (ClampMin = "0", Units = "Seconds"))
+	float DashPriorityWindow = 0.5f;
+
+	/** Seconds the dasher who opened the door (and anyone dashing through in the same direction) cannot be slammed by it, from the moment they hit it. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Dash", meta = (ClampMin = "0", Units = "Seconds"))
+	float DasherProtectionDuration = 0.8f;
+
+	/** Speed in cm/s given to a door already torn off its hinges (loose block) when a player dashes into it, along the Dash. The dasher goes through. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Dash", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
+	float LooseDoorDashPushSpeed = 400.f;
+
+	// ---- Slam ----
+
+	/**
+	 * Opening speed in degrees per second above which the door is "slammed": while it swings away from closed faster than this
+	 * (Dash, ball, thrown object), a player it hits is knocked Down, pushed the way the door moves. As soon as the door swings back toward closed, it is harmless again.
+	 * Keep it above the speed a walking player gives the door.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|Slam", meta = (ClampMin = "0", Units = "DegreesPerSecond"))
+	float SlamMinAngularSpeed = 300.f;
 
 	// ---- Tear off ----
 
-	/** Speed in cm/s given to the door, away from the hit, when it is torn off its hinges (door health at 0). 0: it just falls. */
+	/** Speed in cm/s given to the door, away from the hit, when it is torn off its hinges (lock broken, or door health at 0). 0: it just falls. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|TearOff", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
 	float TearOffSpeed = 300.f;
 };

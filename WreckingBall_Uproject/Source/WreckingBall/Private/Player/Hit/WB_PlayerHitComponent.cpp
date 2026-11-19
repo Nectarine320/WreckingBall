@@ -173,18 +173,6 @@ bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 		return false;
 	}
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
-	// Down without a timer yet: the timer starts on landing (HandleLanded), or right away when the bump has no jump.
-	if (!PlayerState->ChangePlayerState(WBTags::Player_State_Down))
-	{
-		return false;
-	}
-
-	RegisterHit(Dasher);
-	if (const UWorld* World = GetWorld())
-	{
-		HitReactStartTime = World->GetTimeSeconds();
-	}
-	GetUpStartTime = -1.0; // Known on landing.
 
 	// Sideways bump: perpendicular to the Dash, toward the side of the Dash line where this player stands.
 	// The dasher runs through (BP_GenericCharacter ignores the victim), so a push along the Dash would put the victim back in its way.
@@ -201,14 +189,47 @@ bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 		}
 		PushDirection = DashRight * FMath::Sign(Side);
 	}
+	return EnterDownPushed(Dasher, PushDirection, Profile->DownKnockbackStrength, Profile->DownKnockbackUpStrength);
+}
+
+bool UWB_PlayerHitComponent::ReceiveSlamHit(AActor* Source, FVector PushDirection)
+{
+	if (!CanBeHitBy(Source))
+	{
+		return false;
+	}
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	FVector Push = PushDirection.GetSafeNormal2D();
+	if (Push.IsNearlyZero() && Source)
+	{
+		Push = (GetOwner()->GetActorLocation() - Source->GetActorLocation()).GetSafeNormal2D();
+	}
+	return EnterDownPushed(Source, Push, Profile->SlamKnockbackStrength, Profile->SlamKnockbackUpStrength);
+}
+
+bool UWB_PlayerHitComponent::EnterDownPushed(AActor* Source, FVector PushDirection, float Strength, float UpStrength)
+{
+	// Down without a timer yet: the timer starts on landing (HandleLanded), or right away when the bump has no jump.
+	if (!PlayerState->ChangePlayerState(WBTags::Player_State_Down))
+	{
+		return false;
+	}
+
+	RegisterHit(Source);
+	if (const UWorld* World = GetWorld())
+	{
+		HitReactStartTime = World->GetTimeSeconds();
+	}
+	GetUpStartTime = -1.0; // Known on landing.
+
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
 	if (Character)
 	{
 		// Face the push direction right away (the movement then keeps this orientation while sliding).
 		Character->SetActorRotation(FRotator(0.f, PushDirection.Rotation().Yaw, 0.f));
-		Character->LaunchCharacter(PushDirection * Profile->DownKnockbackStrength + FVector::UpVector * Profile->DownKnockbackUpStrength, true, true);
+		Character->LaunchCharacter(PushDirection * Strength + FVector::UpVector * UpStrength, true, true);
 	}
-	if (Character && Profile->DownKnockbackUpStrength > 0.f)
+	if (Character && UpStrength > 0.f)
 	{
 		bAwaitingDownLanding = true;
 	}
@@ -216,8 +237,8 @@ bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 	{
 		StartDownGroundTimer();
 	}
-	UE_LOG(LogWBPlayerHit, Verbose, TEXT("%s knocked down by %s."), *GetNameSafe(GetOwner()), *GetNameSafe(Dasher));
-	OnHitReceived.Broadcast(Dasher, WBTags::Player_State_Down, PushDirection);
+	UE_LOG(LogWBPlayerHit, Verbose, TEXT("%s knocked down by %s."), *GetNameSafe(GetOwner()), *GetNameSafe(Source));
+	OnHitReceived.Broadcast(Source, WBTags::Player_State_Down, PushDirection);
 	return true;
 }
 

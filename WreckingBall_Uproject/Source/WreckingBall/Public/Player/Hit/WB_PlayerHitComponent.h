@@ -70,6 +70,14 @@ public:
 	bool ReceiveDashHit(AActor* Dasher, FVector Direction);
 
 	/**
+	 * A slammed door (or another swinging object) hit this player: same Down as ReceiveDashHit (state, landing timer, grace, OnHitReceived),
+	 * but the player is pushed along PushDirection (the way the door moves), with the profile SlamKnockbackStrength / SlamKnockbackUpStrength.
+	 * Same rules (friendly fire, cooldown, grace, state table): a player already Down is not knocked Down again. Returns true when knocked Down.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerHit", meta = (ReturnDisplayName = "KnockedDown"))
+	bool ReceiveSlamHit(AActor* Source, FVector PushDirection);
+
+	/**
 	 * True when a Dash of Dasher would knock this player Down now: same rules as ReceiveDashHit (friendly fire, cooldown, grace, state table),
 	 * without the run-up check. Lets a bot skip a Dash that cannot work.
 	 */
@@ -137,6 +145,9 @@ private:
 
 	/** Records Source for HitCooldown. */
 	void RegisterHit(AActor* Source);
+
+	/** Down shared by the Dash hit and the slam hit: state, hit record, facing, launch along PushDirection, landing timer, broadcast. False when the state table refuses Down. */
+	bool EnterDownPushed(AActor* Source, FVector PushDirection, float Strength, float UpStrength);
 
 	/** True between a Dash hit and the landing of the bump: the Down timer starts when the player touches the ground. */
 	bool bAwaitingDownLanding = false;
