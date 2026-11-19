@@ -95,7 +95,14 @@ public:
 
 	// ---- Tear off ----
 
-	/** Speed in cm/s given to the door, away from the hit, when it is torn off its hinges (lock broken, or door health at 0). 0: it just falls. */
+	/**
+	 * Speed in cm/s given to the door, away from the hit, when it is torn off its hinges (lock broken, door health at 0, or wall destroyed:
+	 * then away from the last hit the wall received). The push is applied high on the door so it tips over. 0: it just falls.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|TearOff", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
 	float TearOffSpeed = 300.f;
+
+	/** Where the tear off push is applied, as a share of the half height above the door center (0 = center: the door slides upright; 1 = top edge: it tips over the most). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "HingedDoor|TearOff", meta = (ClampMin = "0", ClampMax = "1"))
+	float TearOffPushHeight = 0.8f;
 };

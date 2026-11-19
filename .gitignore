@@ -15,7 +15,6 @@
 *.sln
 *.slnx
 *.code-workspace
-/WreckingBall_Uproject/Docs/Devis
 /WreckingBall_Uproject/.mcp.json
 /WreckingBall_Uproject/Build/Windows/FileOpenOrder/CookerOpenOrder.log
 /WreckingBall_Uproject/Build/Windows/FileOpenOrder/EditorOpenOrder.log

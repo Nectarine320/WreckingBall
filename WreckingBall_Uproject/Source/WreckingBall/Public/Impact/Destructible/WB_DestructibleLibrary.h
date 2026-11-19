@@ -55,6 +55,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Destructible|Wall", meta = (DefaultToSelf = "Wall"))
 	static TEnumAsByte<EPhysicalSurface> GetWallSideSurface(const AActor* Wall, FVector Normal, const UPhysicalMaterial* SideA, const UPhysicalMaterial* SideB, TEnumAsByte<EPhysicalSurface> Fallback);
 
+	/**
+	 * Per-instance material list of a mesh, for the Construction Script: resizes Overrides to the number of material slots of Mesh (no more, no less),
+	 * fills every empty entry with the material the slot currently shows (so the Details panel lists the materials in use), then applies the list to Mesh.
+	 * To go back to the mesh material after a change, clear the entry: it is filled again on the next construction.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Destructible|Materials")
+	static void SyncMaterialOverrides(UMeshComponent* Mesh, UPARAM(ref) TArray<UMaterialInterface*>& Overrides);
+
 	/** Applies Materials to Mesh: entry i goes to material slot i; an empty entry keeps the slot's current material. Extra entries are ignored. */
 	UFUNCTION(BlueprintCallable, Category = "Destructible|Materials")
 	static void ApplyMaterialOverrides(UMeshComponent* Mesh, const TArray<UMaterialInterface*>& Materials);

@@ -151,6 +151,11 @@ private:
 	float ForcedAngle = 0.f;
 	float ForcedTargetAngle = 0.f;
 
+	/** Last impact the wall received (OnParentDamaged): when the wall is destroyed, the door is torn off away from it. */
+	bool bHasParentImpact = false;
+	FVector LastParentImpactLocation = FVector::ZeroVector;
+	FVector LastParentImpactNormal = FVector::ZeroVector;
+
 	/** Players already knocked Down by the current forced opening (each one once). */
 	TArray<TWeakObjectPtr<AActor>> ForcedVictims;
 

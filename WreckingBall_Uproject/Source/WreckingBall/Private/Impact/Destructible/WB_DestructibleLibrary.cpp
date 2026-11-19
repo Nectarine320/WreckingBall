@@ -85,6 +85,28 @@ FVector UWB_DestructibleLibrary::OrientNormalTowardSource(FVector Normal, FVecto
 	return FVector::DotProduct(Normal, ToSource) < 0.f ? -Normal : Normal;
 }
 
+void UWB_DestructibleLibrary::SyncMaterialOverrides(UMeshComponent* Mesh, TArray<UMaterialInterface*>& Overrides)
+{
+	if (!IsValid(Mesh))
+	{
+		return;
+	}
+	const int32 SlotCount = Mesh->GetNumMaterials();
+	Overrides.SetNum(SlotCount);
+	for (int32 Slot = 0; Slot < SlotCount; ++Slot)
+	{
+		if (!Overrides[Slot])
+		{
+			// Show the material in use (asset or template) instead of an empty entry.
+			Overrides[Slot] = Mesh->GetMaterial(Slot);
+		}
+		else if (Mesh->GetMaterial(Slot) != Overrides[Slot])
+		{
+			Mesh->SetMaterial(Slot, Overrides[Slot]);
+		}
+	}
+}
+
 void UWB_DestructibleLibrary::ApplyMaterialOverrides(UMeshComponent* Mesh, const TArray<UMaterialInterface*>& Materials)
 {
 	if (!IsValid(Mesh))

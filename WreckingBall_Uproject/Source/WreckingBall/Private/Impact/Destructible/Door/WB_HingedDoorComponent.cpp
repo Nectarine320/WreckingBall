@@ -218,10 +218,13 @@ void UWB_HingedDoorComponent::TearOff(FVector ImpactLocation, FVector ImpactNorm
 	}
 	Body->SetSimulatePhysics(true);
 	Body->WakeAllRigidBodies();
-	const FVector Push = -ImpactNormal.GetSafeNormal();
+	// Flat push away from the hit, applied high on the door so it tips over instead of sliding upright.
+	const FVector Push = (-ImpactNormal).GetSafeNormal2D();
 	if (Profile && Profile->TearOffSpeed > 0.f && !Push.IsNearlyZero())
 	{
-		Body->AddImpulse(Push * Profile->TearOffSpeed, NAME_None, true);
+		const FBoxSphereBounds Bounds = Body->Bounds;
+		const FVector PushPoint = Bounds.Origin + FVector::UpVector * Bounds.BoxExtent.Z * Profile->TearOffPushHeight;
+		Body->AddImpulseAtLocation(Push * Profile->TearOffSpeed * Body->GetMass(), PushPoint);
 	}
 }
 
@@ -484,11 +487,24 @@ void UWB_HingedDoorComponent::HandleBodyHit(UPrimitiveComponent* HitComponent, A
 
 void UWB_HingedDoorComponent::OnParentDamaged_Implementation(AActor* Parent, FVector ImpactLocation, FVector ImpactNormal, float Damage)
 {
-	// The door ignores the shakes of its wall: only its own hits move it or break its lock.
+	// The door ignores the shakes of its wall, but remembers where the wall was hit last: it is torn off away from that hit.
+	if (!ImpactNormal.IsNearlyZero())
+	{
+		bHasParentImpact = true;
+		LastParentImpactLocation = ImpactLocation;
+		LastParentImpactNormal = ImpactNormal;
+	}
 }
 
 void UWB_HingedDoorComponent::OnParentDestroyed_Implementation(AActor* Parent)
 {
-	// The wall is gone: the door falls off its hinges, without a push.
-	TearOff(FVector::ZeroVector, FVector::ZeroVector);
+	// The wall is gone: the door falls off its hinges, pushed away from the last hit the wall received.
+	if (bHasParentImpact)
+	{
+		TearOff(LastParentImpactLocation, LastParentImpactNormal);
+	}
+	else
+	{
+		TearOff(FVector::ZeroVector, FVector::ZeroVector);
+	}
 }
