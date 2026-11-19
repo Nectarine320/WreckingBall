@@ -19,15 +19,15 @@ class WRECKINGBALL_API UWB_DestructibleLibrary : public UBlueprintFunctionLibrar
 	GENERATED_BODY()
 
 public:
-	/** Returns the actors directly attached to Parent that implement WB_DestructibleDependent. */
+	/** Returns the actors directly attached to Parent that implement WB_DestructibleDependent, themselves or through one of their components (UWB_DestructibleDependentComponent, UWB_HingedDoorComponent). */
 	UFUNCTION(BlueprintCallable, Category = "Destructible|Dependents", meta = (DefaultToSelf = "Parent"))
 	static void GetDependents(AActor* Parent, TArray<AActor*>& OutDependents);
 
-	/** Calls OnParentDamaged on every dependent attached to Parent. Returns the number of dependents notified. */
+	/** Calls OnParentDamaged on every dependent attached to Parent (the actor and each of its components that implement the interface). Returns the number of objects notified. */
 	UFUNCTION(BlueprintCallable, Category = "Destructible|Dependents", meta = (DefaultToSelf = "Parent"))
 	static int32 NotifyDependentsDamaged(AActor* Parent, FVector ImpactLocation, FVector ImpactNormal, float Damage);
 
-	/** Calls OnParentDestroyed on every dependent attached to Parent. Call it once, when Parent enters the Destroyed state. Returns the number of dependents notified. */
+	/** Calls OnParentDestroyed on every dependent attached to Parent (the actor and each of its components that implement the interface). Call it once, when Parent enters the Destroyed state. Returns the number of objects notified. */
 	UFUNCTION(BlueprintCallable, Category = "Destructible|Dependents", meta = (DefaultToSelf = "Parent"))
 	static int32 NotifyDependentsDestroyed(AActor* Parent);
 

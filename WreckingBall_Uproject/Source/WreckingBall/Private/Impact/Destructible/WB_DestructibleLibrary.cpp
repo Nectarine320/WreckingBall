@@ -101,6 +101,44 @@ void UWB_DestructibleLibrary::ApplyMaterialOverrides(UMeshComponent* Mesh, const
 	}
 }
 
+namespace WBDependents
+{
+	/** The objects to notify on one attached actor: the actor itself and its components, when they implement WB_DestructibleDependent. */
+	static void GatherDependentObjects(AActor* Actor, TArray<UObject*>& OutObjects)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+		if (Actor->Implements<UWB_DestructibleDependent>())
+		{
+			OutObjects.Add(Actor);
+		}
+		for (UActorComponent* Component : Actor->GetComponents())
+		{
+			if (IsValid(Component) && Component->Implements<UWB_DestructibleDependent>())
+			{
+				OutObjects.Add(Component);
+			}
+		}
+	}
+
+	/** Every dependent object of every actor attached to Parent. Copied first: a dependent may detach itself while it reacts. */
+	static void GatherAll(AActor* Parent, TArray<UObject*>& OutObjects)
+	{
+		if (!IsValid(Parent))
+		{
+			return;
+		}
+		TArray<AActor*> Attached;
+		Parent->GetAttachedActors(Attached, true, false);
+		for (AActor* Actor : Attached)
+		{
+			GatherDependentObjects(Actor, OutObjects);
+		}
+	}
+}
+
 void UWB_DestructibleLibrary::GetDependents(AActor* Parent, TArray<AActor*>& OutDependents)
 {
 	OutDependents.Reset();
@@ -113,7 +151,9 @@ void UWB_DestructibleLibrary::GetDependents(AActor* Parent, TArray<AActor*>& Out
 	Parent->GetAttachedActors(Attached, true, false);
 	for (AActor* Actor : Attached)
 	{
-		if (IsValid(Actor) && Actor->Implements<UWB_DestructibleDependent>())
+		TArray<UObject*> Objects;
+		WBDependents::GatherDependentObjects(Actor, Objects);
+		if (!Objects.IsEmpty())
 		{
 			OutDependents.Add(Actor);
 		}
@@ -122,29 +162,28 @@ void UWB_DestructibleLibrary::GetDependents(AActor* Parent, TArray<AActor*>& Out
 
 int32 UWB_DestructibleLibrary::NotifyDependentsDamaged(AActor* Parent, FVector ImpactLocation, FVector ImpactNormal, float Damage)
 {
-	// Copy first: a dependent may detach itself while it reacts.
-	TArray<AActor*> Dependents;
-	GetDependents(Parent, Dependents);
-	for (AActor* Dependent : Dependents)
+	TArray<UObject*> Objects;
+	WBDependents::GatherAll(Parent, Objects);
+	for (UObject* Object : Objects)
 	{
-		if (IsValid(Dependent))
+		if (IsValid(Object))
 		{
-			IWB_DestructibleDependent::Execute_OnParentDamaged(Dependent, Parent, ImpactLocation, ImpactNormal, Damage);
+			IWB_DestructibleDependent::Execute_OnParentDamaged(Object, Parent, ImpactLocation, ImpactNormal, Damage);
 		}
 	}
-	return Dependents.Num();
+	return Objects.Num();
 }
 
 int32 UWB_DestructibleLibrary::NotifyDependentsDestroyed(AActor* Parent)
 {
-	TArray<AActor*> Dependents;
-	GetDependents(Parent, Dependents);
-	for (AActor* Dependent : Dependents)
+	TArray<UObject*> Objects;
+	WBDependents::GatherAll(Parent, Objects);
+	for (UObject* Object : Objects)
 	{
-		if (IsValid(Dependent))
+		if (IsValid(Object))
 		{
-			IWB_DestructibleDependent::Execute_OnParentDestroyed(Dependent, Parent);
+			IWB_DestructibleDependent::Execute_OnParentDestroyed(Object, Parent);
 		}
 	}
-	return Dependents.Num();
+	return Objects.Num();
 }
