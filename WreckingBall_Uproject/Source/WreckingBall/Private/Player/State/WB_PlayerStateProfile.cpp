@@ -55,7 +55,6 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 	AllowedTransitions.Add(Player_State_Kicking, FromAction);
 	AllowedTransitions.Add(Player_State_Throwing, FromAction);
 
-	// Stunned / Down: the scoring team goes to Celebrating; the other team keeps its state until the end of the celebration.
 	// Recoiling: same exits as an action (a hit, a goal or the GameMode cut the bounce short).
 	AllowedTransitions.Add(Player_State_Recoiling, FromAction);
 	// Defensive dive: same exits as an action (a hit or a goal cuts it short; the dive component goes back to Free after the get-up).
@@ -63,8 +62,9 @@ UWB_PlayerStateProfile::UWB_PlayerStateProfile()
 	// Defense stance: same exits (released button: Free; Dash hit: Down / Stunned; goal; Disabled).
 	AllowedTransitions.Add(Player_State_Defending, FromAction);
 
-	AllowedTransitions.Add(Player_State_Stunned, MakeContainer({ Player_State_Free, Player_State_Down, Player_State_Disabled, Player_State_Celebrating }));
-	AllowedTransitions.Add(Player_State_Down, MakeContainer({ Player_State_Free, Player_State_Disabled, Player_State_Celebrating }));
+	// A goal ends Stunned / Down right away for both teams (user decision 2026-11-18): Celebrating or Sulking.
+	AllowedTransitions.Add(Player_State_Stunned, MakeContainer({ Player_State_Free, Player_State_Down, Player_State_Disabled, Player_State_Celebrating, Player_State_Sulking }));
+	AllowedTransitions.Add(Player_State_Down, MakeContainer({ Player_State_Free, Player_State_Disabled, Player_State_Celebrating, Player_State_Sulking }));
 	AllowedTransitions.Add(Player_State_Disabled, MakeContainer({ Player_State_Free, Player_State_Celebrating, Player_State_Sulking }));
 	AllowedTransitions.Add(Player_State_Celebrating, MakeContainer({ Player_State_Free, Player_State_Disabled }));
 	AllowedTransitions.Add(Player_State_Sulking, MakeContainer({ Player_State_Free, Player_State_Disabled }));

@@ -97,6 +97,7 @@ public:
 	/**
 	 * Enters NewState (same rules as ChangePlayerState), then goes back to Free after Duration seconds if the player is still in NewState.
 	 * Used for the fallback end of Kicking / Throwing and for Celebrating / Sulking. Any other state change cancels the timer.
+	 * Celebrating / Sulking received while Diving wait for the end of the dive and its get-up, then last the full Duration.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerState", meta = (ReturnDisplayName = "Changed"))
 	bool ChangePlayerStateForDuration(UPARAM(meta = (Categories = "Player.State")) FGameplayTag NewState, float Duration);
@@ -194,6 +195,16 @@ private:
 
 	/** Game time when Celebrating started, for the speed ramp. */
 	double CelebrationStartTime = 0.0;
+
+	/**
+	 * Goal state (Celebrating / Sulking) received during a dive (user decision 2026-11-18): the dive and its get-up end first, then the player
+	 * enters this state instead of Free, for PendingGoalStateDuration (0: no automatic return to Free). Cleared by any other state change.
+	 */
+	FGameplayTag PendingGoalState;
+	float PendingGoalStateDuration = 0.f;
+
+	/** True when NewState is a goal state that must wait for the end of the current dive. */
+	bool ShouldDeferGoalState(FGameplayTag NewState) const;
 
 	/** Missing profile warnings already logged (one per profile and component). */
 	mutable bool bWarnedNoStateProfile = false;

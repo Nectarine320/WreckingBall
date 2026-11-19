@@ -138,13 +138,12 @@ Ce Data Asset est branché sur le composant `PlayerStateComponent` de `BP_Generi
 | `Land` | longueur de `AS_Dive_Land` ÷ `RecoveryPlayRate`, plus `MissStunDuration` après un raté | `AS_Dive_Land` (finit couché) |
 | `GetUp` | longueur de `AS_Dive_GetUp` ÷ `RecoveryPlayRate` | `AS_Dive_GetUp`. Le corps se redresse par code. |
 
-L'état reste `Player.State.Diving` du décollage à la fin du relevé, puis passe à `Free`. Un coup, un but ou `Disabled` coupe le plongeon.
+L'état reste `Player.State.Diving` du décollage à la fin du relevé, puis passe à `Free`. Un coup ou `Disabled` coupe le plongeon. Un but ne le coupe plus (2026-11-18) : le joueur finit son plongeon et se relève, puis passe en `Celebrating` ou `Sulking` pour toute la durée (état en attente dans `WB_PlayerStateComponent`).
 
 ## 4. Mode défense (`Player.State.Defending`)
 - **Animations** (dans `Animation/Defense`, choisies par `ABP_SoccerPlayer`) :
   - `AS_Defense_Idle` (boucle de 1 s) : pose en X, bras qui pulsent, buste un peu penché vers l'avant ;
-  - `AS_Defense_Walk` (boucle de 0,67 s) : pas chassé en crabe, avec les jambes qui s'ouvrent et se ferment en alternance et le buste qui se balance ;
-  - choix : `IsDefenseMoving` (`IsDefending` et `Speed` > 10 cm/s), avec un fondu de 0,15 s ;
+  - ~~`AS_Defense_Walk` (boucle de 0,67 s) : pas chassé en crabe~~ ; ~~choix par `IsDefenseMoving`~~ : remplacés le 2026-11-18 par `BS_Defense_Move` (Blend Space 2D : `DefenseMoveAngle` × `Speed` 0..300). À vitesse 0, `AS_Defense_Idle` ; à 300, `AS_Defense_Step_Forward / _Back / _Left / _Right` (boucles de 0,67 s, coudes repliés, mains devant la poitrine) ;
   - `AS_Defense_Pose` est la pose fixe d'origine. Elle n'est plus utilisée, mais sert de référence.
 - **Déplacement** : en mode défense, `RequestMove` appelle `AddDefenseMoveInput` au lieu de `Move`, qui suit la caméra. L'input est appliqué dans les axes du joueur. La rotation automatique (`bOrientRotationToMovement`) est coupée pendant le mode et revient à sa valeur d'avant à la fin.
 - **Entrées** : `IA_Dive` n'a plus de trigger (Pressed et Tap retirés). Started appelle `RequestDive`, et Completed ou Canceled appelle `ReleaseDive`.

@@ -123,8 +123,30 @@ bool UWB_PlayerStateComponent::CanEnterState(FGameplayTag NewState) const
 	return true;
 }
 
+bool UWB_PlayerStateComponent::ShouldDeferGoalState(FGameplayTag NewState) const
+{
+	return CurrentState == WBTags::Player_State_Diving
+		&& (NewState == WBTags::Player_State_Celebrating || NewState == WBTags::Player_State_Sulking)
+		&& CanEnterState(NewState);
+}
+
 bool UWB_PlayerStateComponent::ChangePlayerState(FGameplayTag NewState)
 {
+	// A goal during a dive: the dive and its get-up end first (user decision 2026-11-18).
+	if (ShouldDeferGoalState(NewState))
+	{
+		PendingGoalState = NewState;
+		PendingGoalStateDuration = 0.f;
+		return true;
+	}
+	// End of the dive (back to Free) with a goal waiting: the player celebrates or sulks instead.
+	float GoalDuration = 0.f;
+	if (PendingGoalState.IsValid() && CurrentState == WBTags::Player_State_Diving && NewState == WBTags::Player_State_Free && CanEnterState(PendingGoalState))
+	{
+		NewState = PendingGoalState;
+		GoalDuration = PendingGoalStateDuration;
+	}
+
 	if (!CanEnterState(NewState))
 	{
 		UE_LOG(LogWBPlayerState, Verbose, TEXT("%s: %s -> %s refused (holding %s)."),
@@ -139,6 +161,9 @@ bool UWB_PlayerStateComponent::ChangePlayerState(FGameplayTag NewState)
 
 	const FGameplayTag OldState = CurrentState;
 	CurrentState = NewState;
+	// Any real state change (hit, Disabled at the kickoff...) cancels a goal state waiting for the end of a dive.
+	PendingGoalState = FGameplayTag();
+	PendingGoalStateDuration = 0.f;
 	if (!IsInChargedAction())
 	{
 		ActionCharge = 0.f;
@@ -156,6 +181,10 @@ bool UWB_PlayerStateComponent::ChangePlayerState(FGameplayTag NewState)
 	}
 	RefreshTickEnabled();
 	OnPlayerStateChanged.Broadcast(OldState, NewState);
+	if (GoalDuration > 0.f && CurrentState == NewState)
+	{
+		ReturnToFreeAfter(GoalDuration);
+	}
 	return true;
 }
 
@@ -171,6 +200,12 @@ bool UWB_PlayerStateComponent::TryEnterState(FGameplayTag NewState)
 
 bool UWB_PlayerStateComponent::ChangePlayerStateForDuration(FGameplayTag NewState, float Duration)
 {
+	if (ShouldDeferGoalState(NewState))
+	{
+		PendingGoalState = NewState;
+		PendingGoalStateDuration = Duration;
+		return true;
+	}
 	if (!ChangePlayerState(NewState))
 	{
 		return false;
