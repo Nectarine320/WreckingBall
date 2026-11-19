@@ -215,29 +215,39 @@ bool UWB_GroundRingComponent::UpdateSnap()
 		return false;
 	}
 
-	FCollisionObjectQueryParams ObjectParams;
-	for (const TEnumAsByte<EObjectTypeQuery>& ObjectType : Profile->GroundObjectTypes)
-	{
-		ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
-	}
-	if (!ObjectParams.IsValid())
-	{
-		return false;
-	}
-
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(WBGroundRingSnap), false, Owner);
-	const FVector Start = Owner->GetActorLocation();
+	// From the center of the owner's root bounds, not the actor location: a mesh whose pivot is off center (the soccer ball's is at its base)
+	// would swing the ring around the owner while it rolls.
+	const USceneComponent* Root = Owner->GetRootComponent();
+	const FVector Start = Root ? Root->Bounds.Origin : Owner->GetActorLocation();
 	const FVector End = Start - FVector(0.f, 0.f, Profile->TraceLength);
 
 	FHitResult Hit;
-	if (!World->LineTraceSingleByObjectType(Hit, Start, End, ObjectParams, QueryParams))
+	if (Profile->bTraceByChannel)
 	{
-		return false;
+		const ECollisionChannel Channel = UEngineTypes::ConvertToCollisionChannel(Profile->GroundTraceChannel);
+		if (!World->LineTraceSingleByChannel(Hit, Start, End, Channel, QueryParams))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		FCollisionObjectQueryParams ObjectParams;
+		for (const TEnumAsByte<EObjectTypeQuery>& ObjectType : Profile->GroundObjectTypes)
+		{
+			ObjectParams.AddObjectTypesToQuery(UEngineTypes::ConvertToCollisionChannel(ObjectType));
+		}
+		if (!ObjectParams.IsValid() || !World->LineTraceSingleByObjectType(Hit, Start, End, ObjectParams, QueryParams))
+		{
+			return false;
+		}
 	}
 
-	// The owner's X and Y, the ground's Z: the ring sits exactly under the owner.
+	// The owner's X and Y, the ground's Z: the ring sits exactly under the owner, flat (rotation reapplied so a rolling owner never tilts it).
 	const float HeightOffset = RingMesh ? Profile->MeshHeightOffset : 0.f;
-	RingVisual->SetWorldLocation(FVector(Start.X, Start.Y, Hit.ImpactPoint.Z + HeightOffset));
+	const FRotator FlatRotation = RingMesh ? FRotator::ZeroRotator : FRotator(-90.f, 0.f, 0.f);
+	RingVisual->SetWorldLocationAndRotation(FVector(Start.X, Start.Y, Hit.ImpactPoint.Z + HeightOffset), FlatRotation);
 
 	if (Profile->bFadeShadowWithHeight && RingMaterial)
 	{

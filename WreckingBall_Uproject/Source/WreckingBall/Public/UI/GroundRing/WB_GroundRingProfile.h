@@ -78,9 +78,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Snap", meta = (ClampMin = "1", Units = "Centimeters", EditCondition = "bSnapToGround"))
 	float TraceLength = 3000.f;
 
-	/** Object types the trace can land on. WorldStatic only (default) ignores the ball, the players, the debris and the moving physics objects. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Snap", meta = (EditCondition = "bSnapToGround"))
+	/** Object types the trace can land on, when bTraceByChannel is off. WorldStatic only (default) ignores the ball, the players, the debris and the moving physics objects. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Snap", meta = (EditCondition = "bSnapToGround && !bTraceByChannel"))
 	TArray<TEnumAsByte<EObjectTypeQuery>> GroundObjectTypes;
+
+	/**
+	 * Off (default): the trace lands on GroundObjectTypes. On: the trace uses GroundTraceChannel and lands on whatever blocks that channel.
+	 * With Visibility: floors (static or movable), furniture and walls block it; the players (Pawn, CharacterMesh), triggers and invisible walls ignore it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Snap", meta = (EditCondition = "bSnapToGround"))
+	bool bTraceByChannel = false;
+
+	/** Trace channel of the downward trace when bTraceByChannel is on (Visibility by default). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Snap", meta = (EditCondition = "bSnapToGround && bTraceByChannel"))
+	TEnumAsByte<ETraceTypeQuery> GroundTraceChannel = TraceTypeQuery1;
 
 	/** On: the shadow of the ring (ShadowStrength) fades as the owner rises above the ground; the outline stays. Off (default): constant look. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Snap", meta = (EditCondition = "bSnapToGround"))
