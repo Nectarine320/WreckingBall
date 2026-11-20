@@ -122,6 +122,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PlayerDive|Defense")
 	void AddDefenseMoveInput(float RightAxis, float ForwardAxis);
 
+	/**
+	 * Defense stance only: replaces the locked facing with WorldDirection (flattened). The body turns toward it at DefenseTurnSpeed, then keeps it.
+	 * Used by the bots (a Goalkeeper bot faces the ball every frame in its zone). A human stance never calls it, so its single-aim rule is unchanged.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerDive|Defense")
+	void SetDefenseFacing(FVector WorldDirection);
+
 	/** True while in the defense stance. */
 	UFUNCTION(BlueprintPure, Category = "PlayerDive|Defense")
 	bool IsDefending() const { return bDefending; }

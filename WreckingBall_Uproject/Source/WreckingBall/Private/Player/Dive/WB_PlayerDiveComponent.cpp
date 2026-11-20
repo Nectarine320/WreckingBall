@@ -637,6 +637,21 @@ bool UWB_PlayerDiveComponent::TryStartDefense()
 	return true;
 }
 
+void UWB_PlayerDiveComponent::SetDefenseFacing(FVector WorldDirection)
+{
+	const FVector Direction = WorldDirection.GetSafeNormal2D();
+	if (!bDefending || Direction.IsNearlyZero())
+	{
+		return;
+	}
+	const float NewYaw = Direction.Rotation().Yaw;
+	if (!FMath::IsNearlyZero(FMath::FindDeltaAngleDegrees(DefenseYaw, NewYaw), 0.5f))
+	{
+		DefenseYaw = NewYaw;
+		bDefenseTurning = true;
+	}
+}
+
 void UWB_PlayerDiveComponent::StopDefense()
 {
 	if (bDefending)

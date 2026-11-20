@@ -185,8 +185,8 @@ public:
 	// ---- Defender ----
 
 	/**
-	 * Defensive zone of the Defender: a radius around its own goal, equal to half the distance between the two goals times this.
-	 * 1: half of the field.
+	 * Defensive zone of the Defender: a radius measured from the net perimeter of its goal (UWB_GoalkeeperZoneComponent), equal to half the
+	 * distance between the two goals times this. 1: half of the field.
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender", meta = (ClampMin = "0.1", ClampMax = "2"))
 	float DefendRadiusScale = 1.f;
@@ -195,11 +195,75 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender", meta = (ClampMin = "0"))
 	float DefendGapToBall = 400.f;
 
+	// ---- Defender, the team holds the ball: open spot ("blind spot") near the carrier ----
+
+	/** The Defender looks for an open spot on a circle of this radius (cm) around the carrier. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "100"))
+	float SupportOpenDistance = 600.f;
+
+	/** Number of spots tested on that circle. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "4", ClampMax = "32"))
+	int32 SupportOpenSampleCount = 12;
+
+	/** Seconds between two searches of the open spot. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0.1"))
+	float SupportOpenInterval = 0.5f;
+
+	/**
+	 * Score of a spot (cm): distance to the nearest opponent + LaneWeight x distance of the nearest opponent to the pass lane (carrier - spot)
+	 * + ForwardBias x how much the spot is toward the opponent goal (-1..1). Higher is better.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0"))
+	float SupportOpenLaneWeight = 1.f;
+
+	/** See SupportOpenLaneWeight. Higher: the Defender prefers the spots toward the opponent goal. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support")
+	float SupportOpenForwardBias = 200.f;
+
+	/** Hysteresis: the Defender changes spot only when a new one scores this many cm better. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0"))
+	float SupportOpenSwitchGain = 150.f;
+
+	/** Every SupportAheadRollInterval seconds, chance (0..1) that the Defender runs ahead of the ball instead (SupportLeadDistance), when that spot is in shooting range. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0", ClampMax = "1"))
+	float SupportAheadChance = 0.25f;
+
+	/** See SupportAheadChance. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0.5"))
+	float SupportAheadRollInterval = 3.f;
+
+	/** Seconds the Defender stays ahead of the ball once the roll succeeded. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0"))
+	float SupportAheadDuration = 2.5f;
+
 	// ---- Goalkeeper ----
 
-	/** The Goalkeeper stands this many cm in front of its goal, on the line ball - goal center. */
+	/**
+	 * The Goalkeeper stands this many cm out of the net perimeter (its UWB_GoalkeeperZoneComponent box), on the line ball - goal center.
+	 * Without a zone, measured from the goal aim point.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
 	float GoalkeeperDistance = 300.f;
+
+	/** When the threat (opponent carrier, else the ball) comes within this many cm of the net perimeter, the Goalkeeper falls back inside its zone. 0: never. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
+	float GoalkeeperRetreatDistance = 600.f;
+
+	/** Fallen back, the Goalkeeper stands this many cm inside the net perimeter, on the line threat - goal center. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
+	float GoalkeeperInsideDepth = 80.f;
+
+	/** True: a Goalkeeper bot enters the defense stance (Player.State.Defending) while it stands inside its zone, and leaves it once out of it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper")
+	bool bGoalkeeperAutoDefense = true;
+
+	/** Hysteresis of the defense stance: the Goalkeeper leaves it only once this many cm out of its zone. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
+	float GoalkeeperZoneExitMargin = 50.f;
+
+	/** True: a free ball inside its zone makes the Goalkeeper go for it (in the stance, the touch catches it). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper")
+	bool bGoalkeeperClaimsBallInZone = true;
 
 	/**
 	 * When the team holds the ball, the Goalkeeper stays in its goal while the ball is in its own territory, and moves up as the last man (a defender)

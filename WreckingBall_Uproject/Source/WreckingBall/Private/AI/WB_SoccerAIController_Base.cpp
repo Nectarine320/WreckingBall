@@ -7,11 +7,13 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
+#include "Match/WB_GoalkeeperZoneComponent.h"
 #include "Match/WB_TeamGoalComponent.h"
 #include "Match/WB_TeamLibrary.h"
 #include "NavigationData.h"
 #include "NavigationSystem.h"
 #include "Player/Command/WB_PlayerCommandComponent.h"
+#include "Player/Dive/WB_PlayerDiveComponent.h"
 #include "Player/Hit/WB_PlayerHitComponent.h"
 #include "Player/State/WB_PlayerStateComponent.h"
 #include "Player/State/WB_PlayerStateTags.h"
@@ -95,6 +97,18 @@ UWB_TeamGoalComponent* AWB_SoccerAIController_Base::GetGoalToDefend() const
 	return UWB_TeamGoalComponent::FindGoalDefendedBy(this, GetTeamIndex());
 }
 
+UWB_GoalkeeperZoneComponent* AWB_SoccerAIController_Base::GetOwnGoalkeeperZone() const
+{
+	return UWB_GoalkeeperZoneComponent::FindZoneForTeam(this, GetTeamIndex());
+}
+
+float AWB_SoccerAIController_Base::GetPerimeterDistance(const FVector& Direction) const
+{
+	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
+	const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone();
+	return (OwnGoal && Zone) ? Zone->GetExitDistance(OwnGoal->GetAimLocation(), Direction) : 0.f;
+}
+
 void AWB_SoccerAIController_Base::SetTeamRole(EWB_SoccerRole InRole, EWB_TeamSituation InSituation, APawn* InPressTarget)
 {
 	CurrentRole = InRole;
@@ -125,6 +139,7 @@ void AWB_SoccerAIController_Base::OnPossess(APawn* InPawn)
 	PlayerStateComp = InPawn ? InPawn->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
 	PlayerHit = InPawn ? InPawn->FindComponentByClass<UWB_PlayerHitComponent>() : nullptr;
 	Commands = InPawn ? InPawn->FindComponentByClass<UWB_PlayerCommandComponent>() : nullptr;
+	DiveComp = InPawn ? InPawn->FindComponentByClass<UWB_PlayerDiveComponent>() : nullptr;
 	ResetBrain();
 
 	if (!Commands)
@@ -139,9 +154,15 @@ void AWB_SoccerAIController_Base::OnUnPossess()
 	{
 		Commands->StopMoving();
 	}
+	// A stance started by the bot has no button to release it: end it before a human takes the character.
+	if (DiveComp && DiveComp->IsDefending())
+	{
+		DiveComp->StopDefense();
+	}
 	PlayerStateComp = nullptr;
 	PlayerHit = nullptr;
 	Commands = nullptr;
+	DiveComp = nullptr;
 	// The role belongs to the character: the coordinator gives the new one at its next evaluation.
 	CurrentRole = EWB_SoccerRole::None;
 	PressTarget.Reset();
@@ -157,6 +178,9 @@ void AWB_SoccerAIController_Base::ResetBrain()
 	bCharging = false;
 	ChargeElapsed = 0.f;
 	bAimJitterDrawn = false;
+	SupportSpotIndex = -1;
+	NextSupportSpotTime = 0.0;
+	SupportAheadUntil = 0.0;
 	CurrentIntent = EWB_SoccerAIIntent::Idle;
 }
 
@@ -178,8 +202,19 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 		switch (CurrentRole)
 		{
 		case EWB_SoccerRole::Defender:
-			return bTeamHasBall ? EWB_SoccerAIIntent::Support : EWB_SoccerAIIntent::Defend;
+			return bTeamHasBall ? EWB_SoccerAIIntent::SupportOpen : EWB_SoccerAIIntent::Defend;
 		case EWB_SoccerRole::Goalkeeper:
+			// A free ball inside its zone: the Goalkeeper claims it.
+			if (!bTeamHasBall && Profile->bGoalkeeperClaimsBallInZone && CachedBall.IsValid() && !FindBallCarrier())
+			{
+				if (const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone())
+				{
+					if (Zone->IsLocationInside(CachedBall->GetActorLocation()))
+					{
+						return EWB_SoccerAIIntent::SeekBall;
+					}
+				}
+			}
 			// The team holds the ball: the Goalkeeper becomes a defender only once the ball is in enemy territory.
 			return (bTeamHasBall && IsBallInEnemyTerritory()) ? EWB_SoccerAIIntent::LastMan : EWB_SoccerAIIntent::GuardGoal;
 		default:
@@ -230,7 +265,8 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	bCharging = false;
 
 	// Every other state (Dashing, Stunned, Down, Disabled, Celebrating...) leaves no choice to the bot.
-	if (!PlayerStateComp->IsInState(WBTags::Player_State_Free))
+	// The defense stance still moves (RequestMove routes the move to the stance).
+	if (!PlayerStateComp->IsInState(WBTags::Player_State_Free) && !PlayerStateComp->IsInState(WBTags::Player_State_Defending))
 	{
 		Commands->StopMoving();
 		return;
@@ -246,6 +282,8 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 		OnIntentChanged(OldIntent, NewIntent);
 	}
 
+	UpdateGoalkeeperStance(Me);
+
 	switch (CurrentIntent)
 	{
 	case EWB_SoccerAIIntent::SeekBall:     TickSeekBall(Me, DeltaSeconds); break;
@@ -256,6 +294,7 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	case EWB_SoccerAIIntent::Defend:       TickDefend(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::GuardGoal:    TickGuardGoal(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::LastMan:      TickLastMan(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::SupportOpen:  TickSupportOpen(Me, DeltaSeconds); break;
 	default:                               Commands->StopMoving(); break;
 	}
 
@@ -584,7 +623,8 @@ bool AWB_SoccerAIController_Base::GetThreatLocation(FVector& OutLocation) const
 
 void AWB_SoccerAIController_Base::HoldSpot(ACharacter* Me, const FVector& Spot, const FVector& LookAt, float DeltaSeconds)
 {
-	if (MoveTowardLocation(Me, Spot))
+	// In the defense stance the facing is locked by UWB_PlayerDiveComponent.
+	if (MoveTowardLocation(Me, Spot) && !(DiveComp && DiveComp->IsDefending()))
 	{
 		const FVector ToLook = (LookAt - Me->GetActorLocation()).GetSafeNormal2D();
 		if (!ToLook.IsNearlyZero())
@@ -634,17 +674,19 @@ void AWB_SoccerAIController_Base::TickDefend(ACharacter* Me, float DeltaSeconds)
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
 	const FVector GoalLocation = OwnGoal->GetAimLocation();
 
-	// Defensive zone: half the distance between the two goals (times DefendRadiusScale), around the own goal.
-	float Radius = TNumericLimits<float>::Max();
+	const FVector ToThreat = (Threat - GoalLocation) * FVector(1.f, 1.f, 0.f);
+	const FVector Direction = ToThreat.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToThreat.GetSafeNormal();
+
+	// Defensive zone: from the net perimeter, half the distance between the two goals (times DefendRadiusScale).
+	const float Perimeter = GetPerimeterDistance(Direction);
+	float MaxDistance = TNumericLimits<float>::Max();
 	if (const UWB_TeamGoalComponent* OtherGoal = GetGoalToAttack())
 	{
-		Radius = FVector::Dist2D(GoalLocation, OtherGoal->GetAimLocation()) * 0.5f * Profile->DefendRadiusScale;
+		MaxDistance = Perimeter + FVector::Dist2D(GoalLocation, OtherGoal->GetAimLocation()) * 0.5f * Profile->DefendRadiusScale;
 	}
 
-	// On the line threat - goal, DefendGapToBall short of the threat, never out of the zone.
-	const FVector ToThreat = (Threat - GoalLocation) * FVector(1.f, 1.f, 0.f);
-	const float Distance = FMath::Clamp(static_cast<float>(ToThreat.Size()) - Profile->DefendGapToBall, 0.f, Radius);
-	const FVector Direction = ToThreat.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToThreat.GetSafeNormal();
+	// On the line threat - goal, DefendGapToBall short of the threat, between the perimeter and the end of the zone.
+	const float Distance = FMath::Clamp(static_cast<float>(ToThreat.Size()) - Profile->DefendGapToBall, Perimeter, FMath::Max(Perimeter, MaxDistance));
 	HoldSpot(Me, GoalLocation + Direction * Distance, Threat, DeltaSeconds);
 }
 
@@ -656,12 +698,21 @@ void AWB_SoccerAIController_Base::TickGuardGoal(ACharacter* Me, float DeltaSecon
 		Commands->StopMoving();
 		return;
 	}
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
 	const FVector GoalLocation = OwnGoal->GetAimLocation();
 	FVector Threat;
 	const bool bHasThreat = GetThreatLocation(Threat);
 	const FVector ToThreat = bHasThreat ? (Threat - GoalLocation).GetSafeNormal2D() : FVector::ZeroVector;
 	const FVector Direction = ToThreat.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToThreat;
-	HoldSpot(Me, GoalLocation + Direction * GetActiveProfile()->GoalkeeperDistance, bHasThreat ? Threat : GoalLocation + Direction * 1000.f, DeltaSeconds);
+
+	// GoalkeeperDistance out of the net perimeter; inside the zone once the threat comes within GoalkeeperRetreatDistance of the perimeter.
+	const float Perimeter = GetPerimeterDistance(Direction);
+	float Distance = Perimeter + Profile->GoalkeeperDistance;
+	if (bHasThreat && Perimeter > 0.f && FVector::Dist2D(Threat, GoalLocation) - Perimeter <= Profile->GoalkeeperRetreatDistance)
+	{
+		Distance = FMath::Max(0.f, Perimeter - Profile->GoalkeeperInsideDepth);
+	}
+	HoldSpot(Me, GoalLocation + Direction * Distance, bHasThreat ? Threat : GoalLocation + Direction * 1000.f, DeltaSeconds);
 }
 
 void AWB_SoccerAIController_Base::TickLastMan(ACharacter* Me, float DeltaSeconds)
@@ -689,9 +740,133 @@ void AWB_SoccerAIController_Base::TickLastMan(ACharacter* Me, float DeltaSeconds
 			}
 		}
 	}
-	Distance = FMath::Max(Distance, Profile->GoalkeeperDistance);
 	const FVector Direction = ToBall.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToBall.GetSafeNormal();
+	Distance = FMath::Max(Distance, GetPerimeterDistance(Direction) + Profile->GoalkeeperDistance);
 	HoldSpot(Me, GoalLocation + Direction * Distance, Ball->GetActorLocation(), DeltaSeconds);
+}
+
+void AWB_SoccerAIController_Base::UpdateGoalkeeperStance(ACharacter* Me)
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (!DiveComp || !Profile->bUseTeamRoles || !Profile->bGoalkeeperAutoDefense)
+	{
+		return;
+	}
+	const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone();
+	const bool bDefending = DiveComp->IsDefending();
+	const bool bGuarding = CurrentRole == EWB_SoccerRole::Goalkeeper
+		&& (CurrentIntent == EWB_SoccerAIIntent::GuardGoal || CurrentIntent == EWB_SoccerAIIntent::SeekBall);
+	// Hysteresis: once in the stance, it is kept until GoalkeeperZoneExitMargin out of the zone.
+	const bool bInZone = Zone && Zone->IsLocationInside(Me->GetActorLocation(), bDefending ? Profile->GoalkeeperZoneExitMargin : 0.f);
+	const bool bWant = bGuarding && bInZone;
+
+	if (bWant && !bDefending && PlayerStateComp->IsInState(WBTags::Player_State_Free) && !PlayerStateComp->IsHoldingAnything())
+	{
+		DiveComp->TryStartDefense();
+	}
+	else if (!bWant && bDefending)
+	{
+		DiveComp->StopDefense();
+	}
+
+	// Goalkeeper in its zone: always faces the ball (the stance would otherwise keep its first facing).
+	const AActor* Ball = CachedBall.Get();
+	if (Ball && CurrentRole == EWB_SoccerRole::Goalkeeper && DiveComp->IsDefending() && bInZone)
+	{
+		DiveComp->SetDefenseFacing(Ball->GetActorLocation() - Me->GetActorLocation());
+	}
+}
+
+FVector AWB_SoccerAIController_Base::GetSupportSpot(const FVector& CarrierLocation, int32 Index) const
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	const float Angle = 360.f * Index / FMath::Max(1, Profile->SupportOpenSampleCount);
+	const FVector Spot = CarrierLocation + FVector::ForwardVector.RotateAngleAxis(Angle, FVector::UpVector) * Profile->SupportOpenDistance;
+	UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld());
+	FNavLocation Projected;
+	if (NavSys && NavSys->ProjectPointToNavigation(Spot, Projected, Profile->NavProjectExtent))
+	{
+		return Projected.Location;
+	}
+	return Spot;
+}
+
+float AWB_SoccerAIController_Base::ScoreSupportSpot(const FVector& CarrierLocation, const FVector& Spot, const FVector& Forward) const
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	float NearestOpponent = Profile->SupportOpenDistance * 2.f;
+	float NearestToLane = Profile->SupportOpenDistance;
+	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
+	{
+		if (*It == GetPawn() || !It->FindComponentByClass<UWB_PlayerStateComponent>() || !IsOpponent(*It))
+		{
+			continue;
+		}
+		const FVector Location = It->GetActorLocation();
+		NearestOpponent = FMath::Min(NearestOpponent, static_cast<float>(FVector::Dist2D(Location, Spot)));
+		const FVector OnLane = FMath::ClosestPointOnSegment(Location, CarrierLocation, Spot);
+		NearestToLane = FMath::Min(NearestToLane, static_cast<float>(FVector::Dist2D(Location, OnLane)));
+	}
+	const float Toward = FVector::DotProduct((Spot - CarrierLocation).GetSafeNormal2D(), Forward);
+	return NearestOpponent + Profile->SupportOpenLaneWeight * NearestToLane + Profile->SupportOpenForwardBias * Toward;
+}
+
+void AWB_SoccerAIController_Base::TickSupportOpen(ACharacter* Me, float DeltaSeconds)
+{
+	const APawn* Carrier = FindBallCarrier();
+	const UWB_TeamGoalComponent* Goal = GetGoalToAttack();
+	if (!Carrier || !Goal)
+	{
+		Commands->StopMoving();
+		return;
+	}
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	const double Now = GetWorld()->GetTimeSeconds();
+	const FVector CarrierLocation = Carrier->GetActorLocation();
+	const FVector Forward = (Goal->GetAimLocation() - CarrierLocation).GetSafeNormal2D();
+
+	// Sometimes, run ahead of the ball, when that spot is in shooting range.
+	if (Now >= NextSupportAheadRollTime)
+	{
+		NextSupportAheadRollTime = Now + Profile->SupportAheadRollInterval;
+		const FVector AheadSpot = CarrierLocation + Forward * Profile->SupportLeadDistance;
+		if (FVector::Dist2D(AheadSpot, Goal->GetAimLocation()) <= Profile->ShootMaxDistance && FMath::FRand() < Profile->SupportAheadChance)
+		{
+			SupportAheadUntil = Now + Profile->SupportAheadDuration;
+		}
+	}
+	if (Now < SupportAheadUntil)
+	{
+		MoveToSupportSpot(Me, CarrierLocation);
+		return;
+	}
+
+	// Open spot around the carrier: far from the opponents and from the pass lane, kept unless a spot is clearly better.
+	if (SupportSpotIndex < 0 || Now >= NextSupportSpotTime)
+	{
+		NextSupportSpotTime = Now + Profile->SupportOpenInterval;
+		int32 BestIndex = -1;
+		float BestScore = -TNumericLimits<float>::Max();
+		float CurrentScore = -TNumericLimits<float>::Max();
+		for (int32 Index = 0; Index < Profile->SupportOpenSampleCount; ++Index)
+		{
+			const float Score = ScoreSupportSpot(CarrierLocation, GetSupportSpot(CarrierLocation, Index), Forward);
+			if (Index == SupportSpotIndex)
+			{
+				CurrentScore = Score;
+			}
+			if (Score > BestScore)
+			{
+				BestScore = Score;
+				BestIndex = Index;
+			}
+		}
+		if (SupportSpotIndex < 0 || BestScore > CurrentScore + Profile->SupportOpenSwitchGain)
+		{
+			SupportSpotIndex = BestIndex;
+		}
+	}
+	HoldSpot(Me, GetSupportSpot(CarrierLocation, SupportSpotIndex), CarrierLocation, DeltaSeconds);
 }
 
 FVector AWB_SoccerAIController_Base::GetShotDirection(const ACharacter* Me, const UWB_TeamGoalComponent* Goal)
@@ -863,6 +1038,15 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 		}
 	}
 	DrawDebugString(World, Me->GetActorLocation() + FVector(0.f, 0.f, 140.f), Text, nullptr, FColor::Orange, 0.f, true);
+
+	if (CurrentRole == EWB_SoccerRole::Goalkeeper)
+	{
+		if (const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone())
+		{
+			const bool bStance = DiveComp && DiveComp->IsDefending();
+			DrawDebugBox(World, Zone->GetComponentLocation(), Zone->GetScaledBoxExtent(), Zone->GetComponentQuat(), bStance ? FColor::Green : FColor::White, false, -1.f, 0, 2.f);
+		}
+	}
 
 	if (const UWB_TeamGoalComponent* Goal = GetGoalToAttack())
 	{

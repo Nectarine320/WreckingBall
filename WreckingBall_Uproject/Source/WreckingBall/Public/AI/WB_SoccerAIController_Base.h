@@ -7,6 +7,8 @@
 
 class ACharacter;
 class UWB_PlayerCommandComponent;
+class UWB_PlayerDiveComponent;
+class UWB_GoalkeeperZoneComponent;
 class UWB_PlayerHitComponent;
 class UWB_PlayerStateComponent;
 class UWB_SoccerAIProfile;
@@ -33,7 +35,9 @@ enum class EWB_SoccerAIIntent : uint8
 	/** Team roles, Goalkeeper while the team defends: stand in front of the own goal, on the line ball - goal center. */
 	GuardGoal,
 	/** Team roles, Goalkeeper while the team holds the ball: move up, staying the member of the team nearest to the own goal. */
-	LastMan
+	LastMan,
+	/** Team roles, Defender while the team holds the ball: stand in an open spot near the carrier (free pass lane), sometimes ahead of the ball. */
+	SupportOpen
 };
 
 /**
@@ -85,6 +89,10 @@ public:
 	/** Goal the bot's team defends. None when the level has no UWB_TeamGoalComponent for its team. */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	UWB_TeamGoalComponent* GetGoalToDefend() const;
+
+	/** Goalkeeper zone (net perimeter) of the goal the bot's team defends. None when that goal has no UWB_GoalkeeperZoneComponent. */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI")
+	UWB_GoalkeeperZoneComponent* GetOwnGoalkeeperZone() const;
 
 	/** Team of the possessed player (UWB_TeamLibrary::GetTeamOf: its PlayerState, else the copy in its UWB_PlayerHitComponent). -1: no team. */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
@@ -151,6 +159,18 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UWB_PlayerCommandComponent> Commands;
 
+	/** Defense stance of the Goalkeeper. Optional: without it, no automatic stance. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWB_PlayerDiveComponent> DiveComp;
+
+	/** Open spot of SupportOpen: its angle index on the circle around the carrier (-1: none yet), and the next search time. */
+	int32 SupportSpotIndex = -1;
+	double NextSupportSpotTime = 0.0;
+
+	/** SupportOpen: next roll for the "ahead of the ball" run, and the end of the current run. */
+	double NextSupportAheadRollTime = 0.0;
+	double SupportAheadUntil = 0.0;
+
 	TWeakObjectPtr<AActor> CachedBall;
 	double NextBallSearchTime = 0.0;
 
@@ -190,6 +210,19 @@ private:
 	void TickDefend(ACharacter* Me, float DeltaSeconds);
 	void TickGuardGoal(ACharacter* Me, float DeltaSeconds);
 	void TickLastMan(ACharacter* Me, float DeltaSeconds);
+	void TickSupportOpen(ACharacter* Me, float DeltaSeconds);
+
+	/** Score (cm) of an open spot for a pass from Carrier: see SupportOpenLaneWeight in the profile. */
+	float ScoreSupportSpot(const FVector& CarrierLocation, const FVector& Spot, const FVector& Forward) const;
+
+	/** World point of open spot Index on the circle around CarrierLocation (snapped on the NavMesh when possible). */
+	FVector GetSupportSpot(const FVector& CarrierLocation, int32 Index) const;
+
+	/** Distance (cm) from the own goal aim point to the net perimeter along Direction (0 without a goalkeeper zone). */
+	float GetPerimeterDistance(const FVector& Direction) const;
+
+	/** Goalkeeper bot: enters the defense stance inside its zone, leaves it once out of it (bGoalkeeperAutoDefense). */
+	void UpdateGoalkeeperStance(ACharacter* Me);
 
 	/** Chases Target (predicted spot) and Dashes on it when EvaluateDash allows it; steps back when too close for the run-up. */
 	void ChaseAndDash(ACharacter* Me, APawn* Target);
