@@ -48,6 +48,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Possession", meta = (ClampMin = "0", Units = "Seconds"))
 	float KickerRecatchDelay = 0.5f;
 
+	/**
+	 * Kicked ball that rebounded (wall, obstacle, player): it can be caught by walking again once slower than this, in cm/s, even above its
+	 * KickedReleaseSpeed. 0: off, a rebound changes nothing.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Possession", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
+	float KickedReboundReleaseSpeed = 0.f;
+
 	/** States where the move and look inputs have no effect. Default: Disabled, Down, Stunned, Recoiling, Diving. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerState|Inputs", meta = (Categories = "Player.State"))
 	FGameplayTagContainer StatesBlockingMovement;

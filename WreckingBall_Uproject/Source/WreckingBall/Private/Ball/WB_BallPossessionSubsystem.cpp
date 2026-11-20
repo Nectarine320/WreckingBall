@@ -12,6 +12,12 @@ namespace
 	/** Seconds after the kick before the speed test may end the kicked mode: the impulse is applied at the next physics step. Technical value. */
 	constexpr double MinKickedTime = 0.1;
 
+	/** A kicked ball rebounded when its flat direction turns by more than this in one frame (cosine of 45 degrees). Technical value. */
+	constexpr float ReboundCosine = 0.7071f;
+
+	/** Below this flat speed (cm/s) the direction is too noisy to detect a rebound. Technical value. */
+	constexpr float ReboundMinSpeed = 50.f;
+
 	/** Niagara user parameter switched by the trail logic (NS_BallTrail). */
 	const FName TrailActiveParameter(TEXT("TrailActive"));
 }
@@ -116,6 +122,8 @@ void UWB_BallPossessionSubsystem::MarkBallKicked(const UObject* WorldContextObje
 	Record.KickTime = Self->GetWorld()->GetTimeSeconds();
 	Record.ReleaseSpeed = KickedReleaseSpeed;
 	Record.bKicked = KickedReleaseSpeed > 0.f;
+	Record.bRebounded = false;
+	Record.bHasLastVelocity = false;
 }
 
 void UWB_BallPossessionSubsystem::ClearBallKick(const UObject* WorldContextObject, AActor* Ball)
@@ -200,10 +208,18 @@ void UWB_BallPossessionSubsystem::ClearBallDribbler(const UObject* WorldContextO
 	}
 }
 
-bool UWB_BallPossessionSubsystem::CanBeCaughtByWalking(const AActor* Ball, const AActor* Player, float KickerRecatchDelay) const
+bool UWB_BallPossessionSubsystem::CanBeCaughtByWalking(const AActor* Ball, const AActor* Player, float KickerRecatchDelay, float ReboundReleaseSpeed, FString* OutRefusal) const
 {
-	if (!Ball || IsBallHeld(this, Ball))
+	if (!Ball)
 	{
+		return false;
+	}
+	if (const AActor* Possessor = GetBallPossessor(this, Ball))
+	{
+		if (OutRefusal)
+		{
+			*OutRefusal = FString::Printf(TEXT("held by %s"), *Possessor->GetName());
+		}
 		return false;
 	}
 	const FWB_BallKickRecord* Record = Records.Find(Ball);
@@ -213,10 +229,30 @@ bool UWB_BallPossessionSubsystem::CanBeCaughtByWalking(const AActor* Ball, const
 	}
 	if (Record->bKicked)
 	{
-		return false;
+		const UPrimitiveComponent* Body = FindBallBody(Ball);
+		const float Speed = Body ? Body->GetComponentVelocity().Size() : Ball->GetVelocity().Size();
+		const bool bReboundRelease = Record->bRebounded && ReboundReleaseSpeed > 0.f && Speed < ReboundReleaseSpeed;
+		if (!bReboundRelease)
+		{
+			if (OutRefusal)
+			{
+				*OutRefusal = FString::Printf(TEXT("kicked (speed %.0f cm/s, release under %.0f; rebounded %s, rebound release under %.0f)"),
+					Speed, Record->ReleaseSpeed, Record->bRebounded ? TEXT("yes") : TEXT("no"), ReboundReleaseSpeed);
+			}
+			return false;
+		}
 	}
 	const bool bOwnKick = Record->Kicker.Get() == Player;
-	return !bOwnKick || GetWorld()->GetTimeSeconds() - Record->KickTime >= KickerRecatchDelay;
+	const double SinceKick = GetWorld()->GetTimeSeconds() - Record->KickTime;
+	if (bOwnKick && SinceKick < KickerRecatchDelay)
+	{
+		if (OutRefusal)
+		{
+			*OutRefusal = FString::Printf(TEXT("own kick, recatch delay (%.2f s of %.2f)"), SinceKick, KickerRecatchDelay);
+		}
+		return false;
+	}
+	return true;
 }
 
 void UWB_BallPossessionSubsystem::Tick(float DeltaTime)
@@ -247,7 +283,19 @@ void UWB_BallPossessionSubsystem::Tick(float DeltaTime)
 			continue;
 		}
 		const UPrimitiveComponent* Body = FindBallBody(Ball);
-		const float Speed = Body ? Body->GetComponentVelocity().Size() : Ball->GetVelocity().Size();
+		const FVector Velocity = Body ? Body->GetComponentVelocity() : Ball->GetVelocity();
+		const float Speed = Velocity.Size();
+
+		// Rebound: the flat direction turned sharply since the last frame (wall, obstacle, player).
+		const FVector Flat(Velocity.X, Velocity.Y, 0.f);
+		const FVector LastFlat(Record.LastVelocity.X, Record.LastVelocity.Y, 0.f);
+		if (Record.bHasLastVelocity && Flat.Size() > ReboundMinSpeed && LastFlat.Size() > ReboundMinSpeed
+			&& FVector::DotProduct(Flat.GetSafeNormal(), LastFlat.GetSafeNormal()) < ReboundCosine)
+		{
+			Record.bRebounded = true;
+		}
+		Record.LastVelocity = Velocity;
+		Record.bHasLastVelocity = true;
 		if (Speed < Record.ReleaseSpeed)
 		{
 			// Slow enough: anyone may catch it again (the kicker keeps its delay, the record stays for it).

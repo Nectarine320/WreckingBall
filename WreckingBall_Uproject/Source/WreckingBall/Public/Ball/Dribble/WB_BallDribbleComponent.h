@@ -31,6 +31,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble")
 	TObjectPtr<UWB_BallDribbleProfile> DefaultProfile;
 
+	/** Logs why each dribble is lost (height or distance), with the values. Debug. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+	bool bDebugLogLoss = false;
+
 	/** Draws the dribble point, the push and the loss radius. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
 	bool bDebugDrawDribble = false;
@@ -84,6 +88,9 @@ private:
 	/** Seconds the ball has spent beyond LoseDistance. */
 	float TimeBeyondLoseDistance = 0.f;
 
+	/** World time of StartDribble (CatchHeightGrace). */
+	double DribbleStartTime = 0.0;
+
 	/** World time of the last ball touch (touch option). */
 	double LastTouchTime = -1000.0;
 
@@ -94,5 +101,5 @@ private:
 	FVector GetPathPoint(const FVector& BallCenter, const FVector& Target, const FVector& PlayerCenter, float KeepOutRadius, const FVector& Forward) const;
 
 	/** Stops and broadcasts OnDribbleLost. */
-	void LoseBall();
+	void LoseBall(const TCHAR* Reason = TEXT(""));
 };

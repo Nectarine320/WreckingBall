@@ -63,6 +63,7 @@ bool UWB_BallDribbleComponent::StartDribble(AActor* Ball, UWB_BallDribbleProfile
 	ActiveProfile = Profile;
 	TimeBeyondLoseDistance = 0.f;
 	LastTouchTime = -1000.0;
+	DribbleStartTime = GetWorld()->GetTimeSeconds();
 
 	// The player's own capsule must not be blocked by (nor push) the ball it dribbles. Opponents still collide with it.
 	Character->GetCapsuleComponent()->IgnoreActorWhenMoving(Ball, true);
@@ -94,9 +95,13 @@ void UWB_BallDribbleComponent::StopDribble()
 	SetComponentTickEnabled(false);
 }
 
-void UWB_BallDribbleComponent::LoseBall()
+void UWB_BallDribbleComponent::LoseBall(const TCHAR* Reason)
 {
 	AActor* Ball = DribbledBall.Get();
+	if (bDebugLogLoss)
+	{
+		UE_LOG(LogWBBallDribble, Log, TEXT("%s lost %s: %s"), *GetNameSafe(Character), *GetNameSafe(Ball), Reason);
+	}
 	StopDribble();
 	OnDribbleLost.Broadcast(Ball);
 }
@@ -171,15 +176,17 @@ void UWB_BallDribbleComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	const float BallBottomHeight = BallCenter.Z - BallRadius - FeetZ;
 	const FVector Gap = FVector(DribblePoint.X - BallCenter.X, DribblePoint.Y - BallCenter.Y, 0.f);
 	const float GapSize = Gap.Size();
-	if (BallBottomHeight > Profile->LoseHeight)
+	// Just after a catch (CatchHeightGrace), a ball still in the air is kept: gravity brings it down to the feet.
+	const bool bHeightGrace = GetWorld()->GetTimeSeconds() - DribbleStartTime < Profile->CatchHeightGrace;
+	if (BallBottomHeight > Profile->LoseHeight && !bHeightGrace)
 	{
-		LoseBall();
+		LoseBall(*FString::Printf(TEXT("height %.0f cm > LoseHeight %.0f"), BallBottomHeight, Profile->LoseHeight));
 		return;
 	}
 	TimeBeyondLoseDistance = GapSize > Profile->LoseDistance ? TimeBeyondLoseDistance + DeltaTime : 0.f;
 	if (TimeBeyondLoseDistance > Profile->LoseDelay)
 	{
-		LoseBall();
+		LoseBall(*FString::Printf(TEXT("distance %.0f cm > LoseDistance %.0f for %.2f s"), GapSize, Profile->LoseDistance, TimeBeyondLoseDistance));
 		return;
 	}
 

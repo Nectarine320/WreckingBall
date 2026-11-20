@@ -19,6 +19,10 @@ struct FWB_BallKickRecord
 	double KickTime = 0.0;
 	float ReleaseSpeed = 0.f;
 	bool bKicked = false;
+	/** True once the kicked ball rebounded (its flat direction turned sharply in one frame). */
+	bool bRebounded = false;
+	bool bHasLastVelocity = false;
+	FVector LastVelocity = FVector::ZeroVector;
 };
 
 /** Speed trail of one ball: the Niagara component to switch, its thresholds (cm/s) and its state. */
@@ -92,8 +96,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
 	static void RegisterBallTrail(const UObject* WorldContextObject, AActor* Ball, UNiagaraComponent* Trail, float StartSpeed, float StopSpeed, float ImpactSpeed);
 
-	/** True when Player may catch Ball by walking into it: not held, not kicked, and not its own kick within KickerRecatchDelay seconds. */
-	bool CanBeCaughtByWalking(const AActor* Ball, const AActor* Player, float KickerRecatchDelay) const;
+	/**
+	 * True when Player may catch Ball by walking into it: not held, not kicked (or kicked, rebounded and slower than ReboundReleaseSpeed when it is
+	 * above 0), and not its own kick within KickerRecatchDelay seconds. OutRefusal (optional) receives why it is refused, for the debug log.
+	 */
+	bool CanBeCaughtByWalking(const AActor* Ball, const AActor* Player, float KickerRecatchDelay, float ReboundReleaseSpeed = 0.f, FString* OutRefusal = nullptr) const;
 
 	/** Body of Ball whose velocity is read (simulated root, or first simulated primitive). */
 	static UPrimitiveComponent* FindBallBody(const AActor* Ball);

@@ -69,6 +69,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Debug")
 	bool bDebugShowState = false;
 
+	/** Logs why a ball in the catch zone is not caught (held, kicked, own kick delay), at most twice per second. Debug. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug")
+	bool bDebugLogBallCatch = false;
+
 	/** Height in cm above the actor location where the debug text is drawn. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Debug", meta = (Units = "Centimeters"))
 	float DebugTextHeight = 120.f;
@@ -227,6 +231,9 @@ private:
 
 	/** Next time a catch request may be fired again (the pickup refuses some balls). */
 	double NextCatchRequestTime = 0.0;
+
+	/** World time of the next allowed catch refusal log (bDebugLogBallCatch). */
+	double NextCatchLogTime = 0.0;
 
 	/** Move speed multiplier of the dragged object (GrabbedMoveSpeedCurve at SetHeldObjectMass). 1 when nothing is dragged. */
 	float HeldObjectSpeedMultiplier = 1.f;

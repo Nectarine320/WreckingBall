@@ -342,8 +342,15 @@ void UWB_PlayerStateComponent::TickBallCatch()
 		{
 			continue;
 		}
-		if (!Possession->CanBeCaughtByWalking(Ball, Character, Profile->KickerRecatchDelay))
+		FString Refusal;
+		if (!Possession->CanBeCaughtByWalking(Ball, Character, Profile->KickerRecatchDelay, Profile->KickedReboundReleaseSpeed, bDebugLogBallCatch ? &Refusal : nullptr))
 		{
+			// Log cadence: twice per second. Technical value.
+			if (bDebugLogBallCatch && World->GetTimeSeconds() >= NextCatchLogTime)
+			{
+				NextCatchLogTime = World->GetTimeSeconds() + 0.5;
+				UE_LOG(LogWBPlayerState, Log, TEXT("%s cannot catch %s: %s"), *Character->GetName(), *Ball->GetName(), *Refusal);
+			}
 			continue;
 		}
 		// Retry cadence when the pickup refuses the ball (technical, not a feel value).
