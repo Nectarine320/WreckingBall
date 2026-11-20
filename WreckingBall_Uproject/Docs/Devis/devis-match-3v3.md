@@ -1,6 +1,8 @@
 # Wrecking Ball — Devis « Match 3 contre 3 » (phase E, étape 15)
 
-Brouillon du 2026-11-19 (19 h 46). Réponses de l'utilisateur intégrées à 20 h 09 et **20 h 20**. **Prêt à remettre à Claude++** (lots 1 et 2 d'abord).
+Brouillon du 2026-11-19 (19 h 46). Réponses de l'utilisateur intégrées à 20 h 09 et **20 h 20**. Remis à Claude++ le 2026-11-19.
+
+> **État au 2026-11-20 : fait et testé par l'utilisateur.** Lots regroupés (A = 1 + 2 + 3, B = 4 + 5). Écarts au texte ci-dessous, décisions du chantier et points ouverts : voir `bilan-match-3v3.md`. Principaux écarts : changement de personnage **à la réception** de la passe (2ᵉ appui = prise immédiate du receveur) ; **reprise automatique du COM allié qui prend le ballon** (`bTakeBotCarrier`) ; caméra avec **porteur dans le tiers opposé** à sa direction (Data Asset caméra) ; **indicateurs aussi pour les COM** (sans texte), taille selon la distance, contour blanc ; prise du ballon au contact de la capsule ; ballon du coup d'envoi posé au sol.
 
 ## Contexte
 Le jeu devient un soccer plus traditionnel : **toujours 2 équipes de 3 personnages** (6 sur le terrain). Les humains (1 à 4) prennent un personnage de leur équipe ; les autres sont contrôlés par l'IA. La destruction reste au cœur du plaisir.

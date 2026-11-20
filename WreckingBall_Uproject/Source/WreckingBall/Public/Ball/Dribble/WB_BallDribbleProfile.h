@@ -83,6 +83,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Loss", meta = (ClampMin = "0", Units = "Seconds"))
 	float LoseDelay = 0.25f;
 
+	/** Seconds after a catch during which LoseHeight is ignored, so a bouncing ball caught in the air settles at the feet instead of being lost at once. 0: LoseHeight applies at once. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Loss", meta = (ClampMin = "0", Units = "Seconds"))
+	float CatchHeightGrace = 0.f;
+
 	/** Height in cm of the bottom of the ball above the player's feet beyond which the possession is lost at once (bounce, fall). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Loss", meta = (ClampMin = "0", Units = "Centimeters"))
 	float LoseHeight = 80.f;
