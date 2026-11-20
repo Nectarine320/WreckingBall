@@ -87,6 +87,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", ClampMax = "90"))
 	float DashAngleJitter = 15.f;
 
+	/**
+	 * True: the Dash direction is the direction to the target's current position (plus DashAngleJitter), an approximate aim at the player.
+	 * False: the bot aims at the predicted position (DashLeadFactor). The reach check always uses the predicted position.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash")
+	bool bDashAimAtTargetLocation = false;
+
 	/** Seconds between two Dash attempts of the bot. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0"))
 	float DashCooldown = 2.5f;
@@ -195,6 +202,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender", meta = (ClampMin = "0"))
 	float DefendGapToBall = 400.f;
 
+	/**
+	 * True: while the team defends, the Defender keeps about DefenderTeammateDistance from its teammate Attacker (else from the teammate who presses).
+	 * Its defense spot is moved toward or away from that teammate, in the same direction. Never applies to the Goalkeeper.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender")
+	bool bDefenderKeepsTeammateDistance = false;
+
+	/** Distance (cm) the Defender keeps from its teammate Attacker while the team defends. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender", meta = (ClampMin = "0", Units = "cm", EditCondition = "bDefenderKeepsTeammateDistance"))
+	float DefenderTeammateDistance = 800.f;
+
+	/** Plus or minus margin (cm) around DefenderTeammateDistance: inside it, the defense spot is not moved. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender", meta = (ClampMin = "0", Units = "cm", EditCondition = "bDefenderKeepsTeammateDistance"))
+	float DefenderTeammateTolerance = 150.f;
+
 	// ---- Defender, the team holds the ball: open spot ("blind spot") near the carrier ----
 
 	/** The Defender looks for an open spot on a circle of this radius (cm) around the carrier. */
@@ -283,9 +305,101 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
 	float LastManBehindMargin = 200.f;
 
+	// ---- Breach: break walls instead of a long detour (user decision 2026-11-20) ----
+
+	/**
+	 * True: when a bot moves somewhere, it compares the NavMesh path (through the doors) with the straight line through the destructible walls
+	 * (Geometry Collections, locked doors). Straight line time = distance / walk speed + BreachWallCostSeconds per wall; detour time = path length / walk speed
+	 * (none when the NavMesh finds no complete path). The faster one wins: the bot Dashes into the first wall of the straight line.
+	 * A wall that cannot break (no Geometry Collection) on the line rules the straight line out.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Breach")
+	bool bAllowBreach = false;
+
+	/** Estimated seconds to break one wall (run-up, Dashes, energy). Higher: the bots take the detour more often. 0: always the straight line when it is breakable. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Breach", meta = (ClampMin = "0"))
+	float BreachWallCostSeconds = 3.f;
+
+	/** Height (cm) above the bot location of the straight line trace that finds the walls. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Breach")
+	float BreachTraceHeight = 30.f;
+
+	/** At most this many walls counted on the straight line; more: the straight line is ruled out. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Breach", meta = (ClampMin = "1", ClampMax = "10"))
+	int32 BreachMaxWalls = 4;
+
+	/** A bot that has been breaking the same wall this many seconds gives up on it (it is then ignored for BreachIgnoreDuration). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Breach", meta = (ClampMin = "1"))
+	float BreachMaxDuration = 12.f;
+
+	/** Seconds a wall the bot gave up on is ignored by the breach. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Breach", meta = (ClampMin = "0"))
+	float BreachIgnoreDuration = 20.f;
+
 	// ---- Debug ----
 
 	/** Draws the path, the intent and the shooting zone of each bot. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug")
 	bool bDrawDebug = false;
+
+	// ---- Debug filter: switch bot intents and actions off one by one, for debugging (user decision 2026-11-20) ----
+
+	/**
+	 * True: the switches below apply (an intent or an action switched off is never used by the bots). False: every intent and action is allowed,
+	 * the bots play normally. Can be changed during Play In Editor. Other switches already exist: bUseTeamRoles, bAllowBreach,
+	 * bGoalkeeperAutoDefense (defense stance), bGoalkeeperClaimsBallInZone, bPressWhileAttacking.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter")
+	bool bUseFeatureFilter = false;
+
+	/** Intent SeekBall (run into the free ball). Off: the bot stays Idle instead (a Goalkeeper claiming a ball in its zone keeps GuardGoal). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowSeekBall = true;
+
+	/** Intent ChaseCarrier (chase the opponent carrier and Dash on it). Off: the bot stays Idle instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowChaseCarrier = true;
+
+	/** Intent Support (run ahead of the teammate carrier, legacy brain and Attacker role). Off: the bot stays Idle instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowSupport = true;
+
+	/** Intent Attack (the bot holds the ball: reach the shooting zone and shoot). Off: the bot stays Idle with the ball. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowAttack = true;
+
+	/** Intent Press (team roles: press the opponent attacker given by the coordinator). Off: the pressing bot keeps the intent of its role. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowPress = true;
+
+	/** Intent Defend (team roles, Defender while the team defends). Off: the bot stays Idle instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowDefend = true;
+
+	/** Intent GuardGoal (team roles, Goalkeeper in front of its goal). Off: the bot stays Idle instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowGuardGoal = true;
+
+	/** Intent LastMan (team roles, Goalkeeper moving up while the team holds the ball). Off: the Goalkeeper keeps GuardGoal. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowLastMan = true;
+
+	/** Intent SupportOpen (team roles, Defender in an open spot near the carrier). Off: the bot stays Idle instead. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowSupportOpen = true;
+
+	/** Action Dash (on a player, and the wall breach). Off: the bot never Dashes; ChaseCarrier and Press only follow the target. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Actions", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowDash = true;
+
+	/** Action shoot. Off: in Attack the bot reaches the shooting zone, aims at the goal and waits, without kicking. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Actions", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowShoot = true;
+
+	/**
+	 * Action ball pickup. Off: in SeekBall the bot stops GrabRange away from the ball and faces it, instead of walking into it.
+	 * The catch itself stays automatic: a ball rolling into the bot is still caught.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Actions", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowBallPickup = true;
 };

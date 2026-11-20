@@ -30,6 +30,27 @@ void UWB_HingedDoorComponent::BeginPlay()
 	InitializeDoor();
 }
 
+void UWB_HingedDoorComponent::OnRegister()
+{
+	Super::OnRegister();
+	UpdateNavigationBlocking();
+}
+
+void UWB_HingedDoorComponent::UpdateNavigationBlocking()
+{
+	UPrimitiveComponent* Body = GetBody();
+	if (!IsValid(Body))
+	{
+		return;
+	}
+	// Before InitializeDoor (editor, or before BeginPlay), the lock state is the starting one.
+	const bool bBlocks = !bTornOff && (bInitialized ? bLocked : bStartsLocked);
+	if (Body->CanEverAffectNavigation() != bBlocks)
+	{
+		Body->SetCanEverAffectNavigation(bBlocks);
+	}
+}
+
 UPrimitiveComponent* UWB_HingedDoorComponent::GetBody() const
 {
 	return Cast<UPrimitiveComponent>(DoorBody.GetComponent(GetOwner()));
@@ -141,6 +162,7 @@ bool UWB_HingedDoorComponent::InitializeDoor()
 	{
 		SetLocked(true);
 	}
+	UpdateNavigationBlocking();
 	return true;
 }
 
@@ -176,6 +198,7 @@ void UWB_HingedDoorComponent::SetLocked(bool bNewLocked)
 		}
 		SetComponentTickEnabled(bInitialized);
 	}
+	UpdateNavigationBlocking();
 }
 
 bool UWB_HingedDoorComponent::ApplyLockDamage(float Damage, FVector ImpactLocation, FVector ImpactNormal)
@@ -206,6 +229,7 @@ void UWB_HingedDoorComponent::TearOff(FVector ImpactLocation, FVector ImpactNorm
 	bSlammed = false;
 	CurrentLockHealth = 0.f;
 	SetComponentTickEnabled(false);
+	UpdateNavigationBlocking();
 
 	if (UPhysicsConstraintComponent* Constraint = GetConstraint())
 	{

@@ -4,6 +4,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Match/Kickoff/WB_KickoffPoint.h"
 #include "Match/WB_TeamLibrary.h"
 #include "NavigationSystem.h"
 
@@ -136,6 +137,12 @@ FVector AWB_TeamSpawnPoint::GetKickoffBallLocation(const UObject* WorldContextOb
 			return SpawnPoint->MainPoint->GetComponentLocation();
 		}
 	}
+
+	if (const AWB_KickoffPoint* KickoffPoint = AWB_KickoffPoint::FindKickoffPoint(WorldContextObject))
+	{
+		return KickoffPoint->GetActorLocation();
+	}
+	UE_LOG(LogWBTeamSpawn, Warning, TEXT("GetKickoffBallLocation: no BP_KickoffPoint in the map, the world origin is used instead."));
 
 	if (const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World))
 	{

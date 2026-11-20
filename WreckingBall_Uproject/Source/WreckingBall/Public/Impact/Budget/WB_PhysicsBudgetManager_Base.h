@@ -64,8 +64,11 @@ private:
 	{
 		float Volume = 0.f;
 		double SleepStartTime = -1.0;
+		double BrokenTime = -1.0;
 		bool bShrinking = false;
 		bool bRemoved = false;
+		/** Marked at registration (bRemoveSmallestOnBreak): shrunk as soon as it breaks off. */
+		bool bRemoveOnBreak = false;
 	};
 
 	struct FWB_TrackedCollection
@@ -74,6 +77,8 @@ private:
 		double RegisterTime = 0.0;
 		int32 RootIndex = INDEX_NONE;
 		int32 RemovalsThisPass = 0;
+		/** Number of pieces still marked bRemoveOnBreak. */
+		int32 PendingBreakRemovals = 0;
 		TArray<FWB_TrackedPiece> Pieces;
 	};
 
@@ -98,13 +103,14 @@ private:
 	void ScheduleNextPass(float Interval);
 	void RunPass();
 	void UpdateShrinkingPieces();
+	void UpdateBreakRemovals();
 	void StartShrink(int32 CollectionIndex, int32 TransformIndex, float Duration);
 	void FinishShrink(const FWB_ShrinkingPiece& Piece);
 	void RemoveInvalidCollections();
 	void GatherPlayerLocations();
 	double ComputeDistanceSq(const FVector& Location) const;
 	int32 FindCollectionIndex(const UGeometryCollectionComponent* Collection) const;
-	void SelectCandidates(bool bIncludeProtected, bool bWearOnly, double Now);
+	void SelectCandidates(bool bIncludeProtected, bool bWearOnly, bool bAwakeOnly, double Now);
 	int32 RemoveCandidates(int32 MaxRemovals, int32 MaxPerCollection, float Duration);
 
 	TArray<FWB_TrackedCollection> Collections;
@@ -116,6 +122,7 @@ private:
 
 	FTimerHandle PassTimerHandle;
 	FTimerHandle ShrinkTimerHandle;
+	FTimerHandle BreakRemovalTimerHandle;
 
 	FWB_PhysicsBudgetStats CachedStats;
 	bool bInEmergency = false;

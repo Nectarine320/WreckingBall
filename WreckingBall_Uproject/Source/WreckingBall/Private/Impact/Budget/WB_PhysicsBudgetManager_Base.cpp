@@ -25,6 +25,8 @@ namespace WBDebris
 	// Rate of the shrink animation. The engine applies the decay to the render at the next physics sync.
 	constexpr float ShrinkUpdateInterval = 1.f / 30.f;
 	constexpr float MinInterval = 0.05f;
+	// Rate of the check of the pieces marked for removal on break (internal cadence, the delay itself is SmallestOnBreakDelay).
+	constexpr float BreakRemovalCheckInterval = 0.1f;
 
 	static void LogStatsForWorld(UWorld* World)
 	{
@@ -90,6 +92,7 @@ void AWB_PhysicsBudgetManager_Base::EndPlay(const EEndPlayReason::Type EndPlayRe
 {
 	GetWorldTimerManager().ClearTimer(PassTimerHandle);
 	GetWorldTimerManager().ClearTimer(ShrinkTimerHandle);
+	GetWorldTimerManager().ClearTimer(BreakRemovalTimerHandle);
 	Collections.Reset();
 	ShrinkingPieces.Reset();
 	PhysicsProps.Reset();
@@ -177,6 +180,33 @@ void AWB_PhysicsBudgetManager_Base::RegisterGeometryCollection(UGeometryCollecti
 			UE_LOG(LogWBDebris, Log, TEXT("Registered %s (%s): %d pieces, volume cm3 min %.0f | p25 %.0f | median %.0f | p75 %.0f | p90 %.0f | max %.0f"),
 				*Collection->GetName(), *RestCollection->GetName(), LeafVolumes.Num(),
 				LeafVolumes[0], LeafVolumes[Last / 4], LeafVolumes[Last / 2], LeafVolumes[(Last * 3) / 4], LeafVolumes[(Last * 9) / 10], LeafVolumes[Last]);
+		}
+	}
+
+	// Removal on break: mark the smallest leaf pieces, shrunk as soon as they break off (UpdateBreakRemovals).
+	if (BudgetData->bRemoveSmallestOnBreak && BudgetData->SmallestOnBreakShare > 0.f)
+	{
+		TArray<int32> Leaves;
+		Leaves.Reserve(NumTransforms);
+		for (int32 TransformIndex = 0; TransformIndex < NumTransforms; ++TransformIndex)
+		{
+			if (TransformIndex != Tracked.RootIndex && TransformToGeometry[TransformIndex] != INDEX_NONE)
+			{
+				Leaves.Add(TransformIndex);
+			}
+		}
+		Leaves.Sort([&Tracked](int32 A, int32 B) { return Tracked.Pieces[A].Volume < Tracked.Pieces[B].Volume; });
+
+		const int32 NumMarked = FMath::Min(Leaves.Num(), FMath::FloorToInt(Leaves.Num() * FMath::Clamp(BudgetData->SmallestOnBreakShare, 0.f, 1.f)));
+		for (int32 Index = 0; Index < NumMarked; ++Index)
+		{
+			Tracked.Pieces[Leaves[Index]].bRemoveOnBreak = true;
+		}
+		Tracked.PendingBreakRemovals = NumMarked;
+
+		if (NumMarked > 0 && !GetWorldTimerManager().IsTimerActive(BreakRemovalTimerHandle))
+		{
+			GetWorldTimerManager().SetTimer(BreakRemovalTimerHandle, this, &AWB_PhysicsBudgetManager_Base::UpdateBreakRemovals, WBDebris::BreakRemovalCheckInterval, true);
 		}
 	}
 
@@ -315,6 +345,10 @@ void AWB_PhysicsBudgetManager_Base::RunPass()
 			}
 
 			++ActivePieces;
+			if (Piece.BrokenTime < 0.0)
+			{
+				Piece.BrokenTime = Now;
+			}
 			if (StateFacade.IsSleeping(TransformIndex))
 			{
 				++SleepingPieces;
@@ -359,7 +393,7 @@ void AWB_PhysicsBudgetManager_Base::RunPass()
 	float NextInterval = Data.WearInterval;
 	if (Mode == EWB_DebrisRemovalMode::Wear)
 	{
-		SelectCandidates(false, true, Now);
+		SelectCandidates(false, true, false, Now);
 		RemoveCandidates(Data.MaxWearRemovalsPerPass, Data.MaxRemovalsPerCollectionPerPass, Data.ShrinkDuration);
 	}
 	else
@@ -371,20 +405,33 @@ void AWB_PhysicsBudgetManager_Base::RunPass()
 		const float Duration = bEmergency ? Data.EmergencyShrinkDuration : Data.ShrinkDuration;
 		NextInterval = bEmergency ? Data.EmergencyInterval : Data.ThinInterval;
 
-		SelectCandidates(false, false, Now);
+		SelectCandidates(false, false, false, Now);
 		if (Candidates.Num() == 0)
 		{
 			// No regular candidate left: large pieces become candidates.
-			SelectCandidates(true, false, Now);
+			SelectCandidates(true, false, false, Now);
 		}
 
-		const int32 Removed = RemoveCandidates(Limit, PerCollection, Duration);
+		int32 Removed = RemoveCandidates(Limit, PerCollection, Duration);
 
-		// 6. Awake pieces are never removed. Report it once per emergency episode.
+		// 6. Still over the budget and no sleeping piece left: awake pieces, in the same order (smallest first, large last).
+		// RemovalsThisPass is kept, so the per-collection share still spreads the removal across the collections.
+		if (Data.bAllowAwakeRemoval && Removed < Limit && AwakePieces > 0)
+		{
+			SelectCandidates(false, false, true, Now);
+			if (Candidates.Num() == 0)
+			{
+				SelectCandidates(true, false, true, Now);
+			}
+			Removed += RemoveCandidates(Limit - Removed, PerCollection, Duration);
+		}
+
+		// 7. Awake pieces left that cannot be removed. Report it once per emergency episode.
 		if (bEmergency && Removed < Limit && AwakePieces > 0 && !bLoggedAwakeEmergency)
 		{
 			bLoggedAwakeEmergency = true;
-			UE_LOG(LogWBDebris, Warning, TEXT("Emergency: %d active pieces for a budget of %d, but %d pieces are awake and cannot be removed."), CountedPieces, MaxPieces, AwakePieces);
+			UE_LOG(LogWBDebris, Warning, TEXT("Emergency: %d active pieces for a budget of %d, but %d pieces are awake and cannot be removed (bAllowAwakeRemoval is %s; speed, distance and age limits apply)."),
+				CountedPieces, MaxPieces, AwakePieces, Data.bAllowAwakeRemoval ? TEXT("on") : TEXT("off"));
 		}
 	}
 
@@ -441,10 +488,13 @@ double AWB_PhysicsBudgetManager_Base::ComputeDistanceSq(const FVector& Location)
 	return Best;
 }
 
-void AWB_PhysicsBudgetManager_Base::SelectCandidates(bool bIncludeProtected, bool bWearOnly, double Now)
+void AWB_PhysicsBudgetManager_Base::SelectCandidates(bool bIncludeProtected, bool bWearOnly, bool bAwakeOnly, double Now)
 {
 	const UWB_PhysicsBudgetData_Base& Data = *BudgetData;
 	Candidates.Reset();
+
+	const double MaxSpeedSq = FMath::Square(static_cast<double>(Data.AwakeRemovalMaxSpeed));
+	const double MinPlayerDistanceSq = FMath::Square(static_cast<double>(Data.AwakeRemovalMinPlayerDistance));
 
 	for (int32 CollectionIndex = 0; CollectionIndex < Collections.Num(); ++CollectionIndex)
 	{
@@ -468,7 +518,13 @@ void AWB_PhysicsBudgetManager_Base::SelectCandidates(bool bIncludeProtected, boo
 		{
 			const FWB_TrackedPiece& Piece = Tracked.Pieces[TransformIndex];
 			if (TransformIndex == Tracked.RootIndex || Piece.bShrinking || Piece.bRemoved
-				|| !StateFacade.HasBrokenOff(TransformIndex) || !StateFacade.IsSleeping(TransformIndex))
+				|| !StateFacade.HasBrokenOff(TransformIndex) || StateFacade.IsSleeping(TransformIndex) == bAwakeOnly)
+			{
+				continue;
+			}
+
+			// An awake piece must be old enough since it broke off.
+			if (bAwakeOnly && Data.AwakeRemovalMinAge > 0.f && (Piece.BrokenTime < 0.0 || Now - Piece.BrokenTime < Data.AwakeRemovalMinAge))
 			{
 				continue;
 			}
@@ -486,13 +542,31 @@ void AWB_PhysicsBudgetManager_Base::SelectCandidates(bool bIncludeProtected, boo
 
 			const FGeometryCollectionPhysicsProxy::FParticle* Particle = Proxy->GetParticleByIndex_External(TransformIndex);
 			const FVector Location = Particle ? FVector(Particle->GetX()) : Component->GetComponentLocation();
+			const double DistanceSq = ComputeDistanceSq(Location);
+
+			// An awake piece must be slow enough and far enough from the players.
+			if (bAwakeOnly)
+			{
+				if (!Particle)
+				{
+					continue; // Speed unknown: the piece stays.
+				}
+				if (Data.AwakeRemovalMaxSpeed > 0.f && FVector(Particle->GetV()).SizeSquared() > MaxSpeedSq)
+				{
+					continue;
+				}
+				if (Data.AwakeRemovalMinPlayerDistance > 0.f && PlayerLocations.Num() > 0 && DistanceSq < MinPlayerDistanceSq)
+				{
+					continue;
+				}
+			}
 
 			FWB_DebrisCandidate& Candidate = Candidates.AddDefaulted_GetRef();
 			Candidate.CollectionIndex = CollectionIndex;
 			Candidate.TransformIndex = TransformIndex;
 			Candidate.Volume = Piece.Volume;
 			Candidate.RegisterTime = Tracked.RegisterTime;
-			Candidate.DistanceSq = ComputeDistanceSq(Location);
+			Candidate.DistanceSq = DistanceSq;
 		}
 	}
 
@@ -608,6 +682,83 @@ void AWB_PhysicsBudgetManager_Base::UpdateShrinkingPieces()
 	for (const FWB_ShrinkingPiece& Finished : FinishedPieces)
 	{
 		FinishShrink(Finished);
+	}
+}
+
+void AWB_PhysicsBudgetManager_Base::UpdateBreakRemovals()
+{
+	if (!IsPerPieceEnabled())
+	{
+		GetWorldTimerManager().ClearTimer(BreakRemovalTimerHandle);
+		return;
+	}
+
+	const UWB_PhysicsBudgetData_Base& Data = *BudgetData;
+	const double Now = GetWorld()->GetTimeSeconds();
+	int32 Pending = 0;
+
+	for (int32 CollectionIndex = 0; CollectionIndex < Collections.Num(); ++CollectionIndex)
+	{
+		FWB_TrackedCollection& Tracked = Collections[CollectionIndex];
+		if (Tracked.PendingBreakRemovals <= 0)
+		{
+			continue;
+		}
+
+		UGeometryCollectionComponent* Component = Tracked.Component.Get();
+		FGeometryDynamicCollection* DynamicCollection = Component ? Component->GetDynamicCollection() : nullptr;
+		if (!DynamicCollection)
+		{
+			continue;
+		}
+		FGeometryCollectionDynamicStateFacade StateFacade(*DynamicCollection);
+		if (!StateFacade.IsValid())
+		{
+			continue;
+		}
+
+		const int32 NumTransforms = FMath::Min(Tracked.Pieces.Num(), DynamicCollection->GetNumTransforms());
+		for (int32 TransformIndex = 0; TransformIndex < NumTransforms; ++TransformIndex)
+		{
+			FWB_TrackedPiece& Piece = Tracked.Pieces[TransformIndex];
+			if (!Piece.bRemoveOnBreak)
+			{
+				continue;
+			}
+
+			// Already taken by a regular pass: nothing left to do for this piece.
+			if (Piece.bShrinking || Piece.bRemoved)
+			{
+				Piece.bRemoveOnBreak = false;
+				--Tracked.PendingBreakRemovals;
+				continue;
+			}
+
+			if (!StateFacade.HasBrokenOff(TransformIndex))
+			{
+				continue;
+			}
+			if (Piece.BrokenTime < 0.0)
+			{
+				Piece.BrokenTime = Now;
+			}
+			if (Now - Piece.BrokenTime < Data.SmallestOnBreakDelay)
+			{
+				continue;
+			}
+
+			Piece.bRemoveOnBreak = false;
+			--Tracked.PendingBreakRemovals;
+			StartShrink(CollectionIndex, TransformIndex, Data.SmallestOnBreakShrinkDuration);
+		}
+
+		Pending += FMath::Max(Tracked.PendingBreakRemovals, 0);
+	}
+
+	// Stopped when no marked piece is left. Pieces of a collection that never breaks stay marked and keep the timer alive (cheap check).
+	if (Pending == 0)
+	{
+		GetWorldTimerManager().ClearTimer(BreakRemovalTimerHandle);
 	}
 }
 

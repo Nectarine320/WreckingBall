@@ -62,6 +62,14 @@ public:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SoccerAI")
 	EWB_SoccerAIIntent CurrentIntent = EWB_SoccerAIIntent::Idle;
 
+	/** Intent refused this frame by the debug filter (AIProfile->bUseFeatureFilter); CurrentIntent is then its fallback. Idle when nothing was refused. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SoccerAI|Debug")
+	EWB_SoccerAIIntent FilteredIntent = EWB_SoccerAIIntent::Idle;
+
+	/** True when the debug filter of AIProfile allows Intent (always true when bUseFeatureFilter is off, and for Idle). */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Debug")
+	bool IsIntentAllowed(EWB_SoccerAIIntent Intent) const;
+
 	/** True: the bot keeps its pawn but does nothing (the pawn stands still). Set by the match roster (ToggleBots); false by default. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SoccerAI")
 	bool bBrainPaused = false;
@@ -114,6 +122,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	bool IsOpponent(const APawn* Other) const;
 
+	/** Wall the bot is breaking through (bAllowBreach). None when it follows the NavMesh. */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Breach")
+	AActor* GetBreachWall() const { return BreachWall.Get(); }
+
 	/** Why the bot did not Dash on the carrier at the last check (Ready when it could). Shown by bDrawDebug. */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SoccerAI")
 	FName DashBlockReason;
@@ -141,6 +153,7 @@ protected:
 	 * Picks the intent of this frame. Attack when holding something. With a team role: Press when the coordinator gave a press target,
 	 * Attacker = SeekBall / ChaseCarrier, Defender = Defend (Support when the team has the ball), Goalkeeper = GuardGoal (LastMan when the team has the ball).
 	 * Without a role (legacy): ChaseCarrier / Support when another player has the ball, else SeekBall.
+	 * Debug filter (AIProfile->bUseFeatureFilter): Press, the Goalkeeper claim and LastMan are skipped when switched off; Tick turns any other intent switched off into Idle.
 	 */
 	UFUNCTION(BlueprintNativeEvent, Category = "SoccerAI")
 	EWB_SoccerAIIntent ChooseIntent();
@@ -203,11 +216,16 @@ private:
 	/** Opponent to press, from the coordinator. */
 	TWeakObjectPtr<APawn> PressTarget;
 
+	/** Idle: stands still and faces the ball (when there is one). */
+	void TickIdle(ACharacter* Me, float DeltaSeconds);
 	void TickSeekBall(ACharacter* Me, float DeltaSeconds);
 	void TickChaseCarrier(ACharacter* Me, float DeltaSeconds);
 	void TickSupport(ACharacter* Me, float DeltaSeconds);
 	void TickPress(ACharacter* Me, float DeltaSeconds);
 	void TickDefend(ACharacter* Me, float DeltaSeconds);
+
+	/** Defender (bDefenderKeepsTeammateDistance): moves Spot toward or away from the teammate Attacker (else the presser) to about DefenderTeammateDistance. */
+	FVector KeepTeammateDistance(const ACharacter* Me, const FVector& Spot) const;
 	void TickGuardGoal(ACharacter* Me, float DeltaSeconds);
 	void TickLastMan(ACharacter* Me, float DeltaSeconds);
 	void TickSupportOpen(ACharacter* Me, float DeltaSeconds);
@@ -223,6 +241,31 @@ private:
 
 	/** Goalkeeper bot: enters the defense stance inside its zone, leaves it once out of it (bGoalkeeperAutoDefense). */
 	void UpdateGoalkeeperStance(ACharacter* Me);
+
+	// ---- Breach (bAllowBreach) ----
+
+	/** Wall the bot is breaking, the point of the straight line where it was hit, and since when. */
+	TWeakObjectPtr<AActor> BreachWall;
+	FVector BreachPoint = FVector::ZeroVector;
+	double BreachStartTime = 0.0;
+
+	/** Walls the bot gave up on, with the time they can be tried again. */
+	TMap<TWeakObjectPtr<AActor>, double> IgnoredBreachWalls;
+
+	/**
+	 * Called with each new path: compares the path (PathLength cm, bPartial: no complete path) with the straight line to Target through the
+	 * destructible walls, and sets BreachWall when the straight line is faster. Clears it otherwise.
+	 */
+	void EvaluateBreach(ACharacter* Me, const FVector& Target, float PathLength, bool bPartial);
+
+	/** Walks to the run-up distance of BreachWall and Dashes into it. */
+	void TickBreach(ACharacter* Me);
+
+	/** True when Actor can be broken by the bots: a Geometry Collection (destructible wall) or a locked door. */
+	static bool IsBreakable(const AActor* Actor);
+
+	/** True when the bot may Dash now (cooldown, state, energy), like EvaluateDash without a target. */
+	bool CanDashNow() const;
 
 	/** Chases Target (predicted spot) and Dashes on it when EvaluateDash allows it; steps back when too close for the run-up. */
 	void ChaseAndDash(ACharacter* Me, APawn* Target);

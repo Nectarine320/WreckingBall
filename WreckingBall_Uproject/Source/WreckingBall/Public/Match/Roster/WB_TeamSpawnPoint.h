@@ -25,7 +25,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TeamSpawn", meta = (ClampMin = "0", ClampMax = "1"))
 	int32 TeamIndex = 0;
 
-	/** True: after this team concedes a goal, the new ball appears at MainPoint. False: the ball always appears at the world origin. */
+	/** True: after this team concedes a goal, the new ball appears at MainPoint. False: the ball appears at the map's kickoff point (BP_KickoffPoint). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "TeamSpawn")
 	bool bUseMainPointForBall = false;
 
@@ -59,8 +59,9 @@ public:
 
 	/**
 	 * Kickoff ball location (on the floor). ConcedingTeamIndex: team that just conceded a goal, -1 at the match start.
-	 * The MainPoint of that team's spawn point when its bUseMainPointForBall is on; else the world origin projected on the NavMesh
-	 * (the origin itself, with a warning, when there is no NavMesh there).
+	 * The MainPoint of that team's spawn point when its bUseMainPointForBall is on; else the map's kickoff point (BP_KickoffPoint).
+	 * Without a kickoff point (warning logged): the world origin projected on the NavMesh, or the origin itself when there is no NavMesh there.
+	 * Also used as the start location of the shared camera.
 	 */
 	UFUNCTION(BlueprintPure, Category = "TeamSpawn", meta = (WorldContext = "WorldContextObject"))
 	static FVector GetKickoffBallLocation(const UObject* WorldContextObject, int32 ConcedingTeamIndex = -1);

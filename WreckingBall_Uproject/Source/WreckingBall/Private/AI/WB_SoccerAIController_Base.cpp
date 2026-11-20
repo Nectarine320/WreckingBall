@@ -7,6 +7,9 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GeometryCollection/GeometryCollectionComponent.h"
+#include "Impact/Destructible/Door/WB_HingedDoorComponent.h"
 #include "Match/WB_GoalkeeperZoneComponent.h"
 #include "Match/WB_TeamGoalComponent.h"
 #include "Match/WB_TeamLibrary.h"
@@ -35,6 +38,34 @@ namespace
 	bool IsHoldingBall(const UWB_PlayerStateComponent* State)
 	{
 		return State && State->CurrentHolding.MatchesTag(WBTags::Player_Holding_Ball);
+	}
+
+	/** True when the debug filter of Profile allows an action: the filter is off, or its switch bSwitch is on. */
+	bool IsActionAllowed(const UWB_SoccerAIProfile* Profile, bool bSwitch)
+	{
+		return !Profile || !Profile->bUseFeatureFilter || bSwitch;
+	}
+}
+
+bool AWB_SoccerAIController_Base::IsIntentAllowed(EWB_SoccerAIIntent Intent) const
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (!Profile || !Profile->bUseFeatureFilter)
+	{
+		return true;
+	}
+	switch (Intent)
+	{
+	case EWB_SoccerAIIntent::SeekBall:     return Profile->bAllowSeekBall;
+	case EWB_SoccerAIIntent::ChaseCarrier: return Profile->bAllowChaseCarrier;
+	case EWB_SoccerAIIntent::Support:      return Profile->bAllowSupport;
+	case EWB_SoccerAIIntent::Attack:       return Profile->bAllowAttack;
+	case EWB_SoccerAIIntent::Press:        return Profile->bAllowPress;
+	case EWB_SoccerAIIntent::Defend:       return Profile->bAllowDefend;
+	case EWB_SoccerAIIntent::GuardGoal:    return Profile->bAllowGuardGoal;
+	case EWB_SoccerAIIntent::LastMan:      return Profile->bAllowLastMan;
+	case EWB_SoccerAIIntent::SupportOpen:  return Profile->bAllowSupportOpen;
+	default:                               return true;
 	}
 }
 
@@ -181,6 +212,7 @@ void AWB_SoccerAIController_Base::ResetBrain()
 	SupportSpotIndex = -1;
 	NextSupportSpotTime = 0.0;
 	SupportAheadUntil = 0.0;
+	BreachWall.Reset();
 	CurrentIntent = EWB_SoccerAIIntent::Idle;
 }
 
@@ -196,7 +228,12 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 	{
 		if (CurrentRole != EWB_SoccerRole::Attacker && PressTarget.IsValid())
 		{
-			return EWB_SoccerAIIntent::Press;
+			if (IsIntentAllowed(EWB_SoccerAIIntent::Press))
+			{
+				return EWB_SoccerAIIntent::Press;
+			}
+			// Debug filter: Press off, the bot keeps the intent of its role.
+			FilteredIntent = EWB_SoccerAIIntent::Press;
 		}
 		const bool bTeamHasBall = TeamSituation == EWB_TeamSituation::Attacking;
 		switch (CurrentRole)
@@ -211,12 +248,26 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 				{
 					if (Zone->IsLocationInside(CachedBall->GetActorLocation()))
 					{
-						return EWB_SoccerAIIntent::SeekBall;
+						if (IsIntentAllowed(EWB_SoccerAIIntent::SeekBall))
+						{
+							return EWB_SoccerAIIntent::SeekBall;
+						}
+						// Debug filter: SeekBall off, the Goalkeeper keeps guarding.
+						FilteredIntent = EWB_SoccerAIIntent::SeekBall;
 					}
 				}
 			}
 			// The team holds the ball: the Goalkeeper becomes a defender only once the ball is in enemy territory.
-			return (bTeamHasBall && IsBallInEnemyTerritory()) ? EWB_SoccerAIIntent::LastMan : EWB_SoccerAIIntent::GuardGoal;
+			if (bTeamHasBall && IsBallInEnemyTerritory())
+			{
+				if (IsIntentAllowed(EWB_SoccerAIIntent::LastMan))
+				{
+					return EWB_SoccerAIIntent::LastMan;
+				}
+				// Debug filter: LastMan off, the Goalkeeper keeps guarding.
+				FilteredIntent = EWB_SoccerAIIntent::LastMan;
+			}
+			return EWB_SoccerAIIntent::GuardGoal;
 		default:
 			break; // Attacker: same as the legacy brain below.
 		}
@@ -272,7 +323,14 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 		return;
 	}
 
-	const EWB_SoccerAIIntent NewIntent = ChooseIntent();
+	// Debug filter: ChooseIntent skips the optional intents switched off (Press, Goalkeeper claim, LastMan); any other intent switched off becomes Idle.
+	FilteredIntent = EWB_SoccerAIIntent::Idle;
+	EWB_SoccerAIIntent NewIntent = ChooseIntent();
+	if (!IsIntentAllowed(NewIntent))
+	{
+		FilteredIntent = NewIntent;
+		NewIntent = EWB_SoccerAIIntent::Idle;
+	}
 	if (NewIntent != CurrentIntent)
 	{
 		const EWB_SoccerAIIntent OldIntent = CurrentIntent;
@@ -295,6 +353,7 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	case EWB_SoccerAIIntent::GuardGoal:    TickGuardGoal(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::LastMan:      TickLastMan(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::SupportOpen:  TickSupportOpen(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::Idle:         TickIdle(Me, DeltaSeconds); break;
 	default:                               Commands->StopMoving(); break;
 	}
 
@@ -332,6 +391,21 @@ void AWB_SoccerAIController_Base::RefreshBall(const ACharacter* Me)
 	CachedBall = Best;
 }
 
+void AWB_SoccerAIController_Base::TickIdle(ACharacter* Me, float DeltaSeconds)
+{
+	Commands->StopMoving();
+	// In the defense stance the facing is locked by UWB_PlayerDiveComponent.
+	const AActor* Ball = CachedBall.Get();
+	if (Ball && !(DiveComp && DiveComp->IsDefending()))
+	{
+		const FVector ToBall = (Ball->GetActorLocation() - Me->GetActorLocation()).GetSafeNormal2D();
+		if (!ToBall.IsNearlyZero())
+		{
+			TurnToward(Me, ToBall, DeltaSeconds);
+		}
+	}
+}
+
 void AWB_SoccerAIController_Base::TickSeekBall(ACharacter* Me, float DeltaSeconds)
 {
 	const AActor* Ball = CachedBall.Get();
@@ -343,6 +417,13 @@ void AWB_SoccerAIController_Base::TickSeekBall(ACharacter* Me, float DeltaSecond
 
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
 	const FVector ToBall = Ball->GetActorLocation() - Me->GetActorLocation();
+	if (!IsActionAllowed(Profile, Profile->bAllowBallPickup))
+	{
+		// Debug filter: pickup off, stop GrabRange away from the ball (on the bot side) and face it.
+		const FVector Away = ToBall.IsNearlyZero() ? -Me->GetActorForwardVector() : -ToBall.GetSafeNormal2D();
+		HoldSpot(Me, Ball->GetActorLocation() + Away * Profile->GrabRange, Ball->GetActorLocation(), DeltaSeconds);
+		return;
+	}
 	if (ToBall.Size2D() <= Profile->GrabRange)
 	{
 		// Close: walk straight into the ball, the catch zone in front of the player takes it automatically.
@@ -388,12 +469,20 @@ bool AWB_SoccerAIController_Base::TryDashOn(ACharacter* Me, APawn* Target)
 	{
 		return false;
 	}
-	// Dash along the actor forward: face the predicted spot with a random error, so some Dashes miss.
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (!IsActionAllowed(Profile, Profile->bAllowDash))
+	{
+		// Debug filter: Dash off, the bot keeps following the target (ChaseAndDash moves toward the predicted spot).
+		static const FName FilterOff(TEXT("Dash off (filter)"));
+		DashBlockReason = FilterOff;
+		return false;
+	}
+	// Dash along the actor forward: face the predicted spot with a random error, so some Dashes miss.
 	NextDashTime = GetWorld()->GetTimeSeconds() + Profile->DashCooldown;
 	const float Jitter = FMath::FRandRange(-Profile->DashAngleJitter, Profile->DashAngleJitter);
 	Commands->StopMoving();
-	Commands->SetFacingDirection((AimPoint - Me->GetActorLocation()).GetSafeNormal2D().RotateAngleAxis(Jitter, FVector::UpVector));
+	const FVector AimLocation = Profile->bDashAimAtTargetLocation ? Target->GetActorLocation() : AimPoint;
+	Commands->SetFacingDirection((AimLocation - Me->GetActorLocation()).GetSafeNormal2D().RotateAngleAxis(Jitter, FVector::UpVector));
 	Commands->Dash();
 	return true;
 }
@@ -687,7 +776,65 @@ void AWB_SoccerAIController_Base::TickDefend(ACharacter* Me, float DeltaSeconds)
 
 	// On the line threat - goal, DefendGapToBall short of the threat, between the perimeter and the end of the zone.
 	const float Distance = FMath::Clamp(static_cast<float>(ToThreat.Size()) - Profile->DefendGapToBall, Perimeter, FMath::Max(Perimeter, MaxDistance));
-	HoldSpot(Me, GoalLocation + Direction * Distance, Threat, DeltaSeconds);
+	HoldSpot(Me, KeepTeammateDistance(Me, GoalLocation + Direction * Distance), Threat, DeltaSeconds);
+}
+
+FVector AWB_SoccerAIController_Base::KeepTeammateDistance(const ACharacter* Me, const FVector& Spot) const
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (!Profile->bDefenderKeepsTeammateDistance || CurrentRole != EWB_SoccerRole::Defender)
+	{
+		return Spot;
+	}
+	const UWB_TeamCoordinatorComponent* Coordinator = UWB_TeamCoordinatorComponent::GetTeamCoordinator(this, GetTeamIndex());
+	if (!Coordinator)
+	{
+		return Spot;
+	}
+
+	// Teammate to follow: the Attacker, else the one who presses.
+	const APawn* Anchor = nullptr;
+	for (const FWB_TeamRoleAssignment& Entry : Coordinator->GetAssignments())
+	{
+		if (!Entry.Member || Entry.Member.Get() == Me)
+		{
+			continue;
+		}
+		if (Entry.Role == EWB_SoccerRole::Attacker)
+		{
+			Anchor = Entry.Member.Get();
+			break;
+		}
+		if (Entry.bPressing && !Anchor)
+		{
+			Anchor = Entry.Member.Get();
+		}
+	}
+	if (!Anchor)
+	{
+		return Spot;
+	}
+
+	const FVector AnchorLocation = Anchor->GetActorLocation();
+	FVector Offset = (Spot - AnchorLocation) * FVector(1.f, 1.f, 0.f);
+	if (Offset.IsNearlyZero())
+	{
+		Offset = (Me->GetActorLocation() - AnchorLocation) * FVector(1.f, 1.f, 0.f);
+	}
+	if (Offset.IsNearlyZero())
+	{
+		return Spot;
+	}
+
+	const float MinDistance = FMath::Max(Profile->DefenderTeammateDistance - Profile->DefenderTeammateTolerance, 0.f);
+	const float MaxDistance = Profile->DefenderTeammateDistance + Profile->DefenderTeammateTolerance;
+	const float Distance = static_cast<float>(Offset.Size());
+	if (Distance >= MinDistance && Distance <= MaxDistance)
+	{
+		return Spot;
+	}
+	const FVector Adjusted = AnchorLocation + Offset.GetSafeNormal() * FMath::Clamp(Distance, MinDistance, MaxDistance);
+	return FVector(Adjusted.X, Adjusted.Y, Spot.Z);
 }
 
 void AWB_SoccerAIController_Base::TickGuardGoal(ACharacter* Me, float DeltaSeconds)
@@ -908,7 +1055,8 @@ void AWB_SoccerAIController_Base::TickAttack(ACharacter* Me, float DeltaSeconds)
 
 	Commands->StopMoving();
 	const float Remaining = TurnToward(Me, GetShotDirection(Me, Goal), DeltaSeconds);
-	if (Remaining <= Profile->ShootAimTolerance)
+	// Debug filter: shoot off, the bot aims at the goal and waits.
+	if (Remaining <= Profile->ShootAimTolerance && IsActionAllowed(Profile, Profile->bAllowShoot))
 	{
 		const float Alpha = Profile->ShootMaxDistance > Profile->ShootMinDistance
 			? FMath::Clamp((Distance - Profile->ShootMinDistance) / (Profile->ShootMaxDistance - Profile->ShootMinDistance), 0.f, 1.f)
@@ -967,19 +1115,180 @@ void AWB_SoccerAIController_Base::RebuildPath(ACharacter* Me, const FVector& Tar
 		FPathFindingQuery Query(this, *NavData, Start, End);
 		Query.SetAllowPartialPaths(true);
 		const FPathFindingResult Result = NavSys->FindPathSync(Query);
+		bool bPartial = true;
 		if (Result.IsSuccessful() && Result.Path.IsValid())
 		{
+			bPartial = Result.Path->IsPartial();
 			for (const FNavPathPoint& Point : Result.Path->GetPathPoints())
 			{
 				PathPoints.Add(Point.Location);
 			}
 		}
+		float PathLength = 0.f;
+		for (int32 i = 1; i < PathPoints.Num(); ++i)
+		{
+			PathLength += FVector::Dist2D(PathPoints[i - 1], PathPoints[i]);
+		}
+		EvaluateBreach(Me, Target, PathLength, bPartial || PathPoints.Num() < 2);
+	}
+	else
+	{
+		BreachWall.Reset();
 	}
 
 	// No NavMesh or no path: straight line.
 	if (PathPoints.Num() < 2)
 	{
 		PathPoints = { Start, Target };
+	}
+}
+
+bool AWB_SoccerAIController_Base::IsBreakable(const AActor* Actor)
+{
+	if (!Actor)
+	{
+		return false;
+	}
+	if (const UWB_HingedDoorComponent* Door = Actor->FindComponentByClass<UWB_HingedDoorComponent>())
+	{
+		return Door->IsLocked();
+	}
+	return Actor->FindComponentByClass<UGeometryCollectionComponent>() != nullptr;
+}
+
+bool AWB_SoccerAIController_Base::CanDashNow() const
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	return Profile && Commands && PlayerStateComp && GetWorld()->GetTimeSeconds() >= NextDashTime
+		&& PlayerStateComp->CanEnterState(WBTags::Player_State_Dashing) && !Commands->IsExhausted()
+		&& Commands->GetEnergyPercent() >= Commands->GetDashEnergyCost() + Profile->DashEnergyReserve;
+}
+
+void AWB_SoccerAIController_Base::EvaluateBreach(ACharacter* Me, const FVector& Target, float PathLength, bool bPartial)
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	// The breach is a Dash: the debug filter switch bAllowDash rules it out too.
+	if (!Profile->bAllowBreach || !IsActionAllowed(Profile, Profile->bAllowDash) || !Commands || !PlayerStateComp || PlayerStateComp->IsHoldingAnything())
+	{
+		BreachWall.Reset();
+		return;
+	}
+	UWorld* World = GetWorld();
+	const double Now = World->GetTimeSeconds();
+	for (auto It = IgnoredBreachWalls.CreateIterator(); It; ++It)
+	{
+		if (!It->Key.IsValid() || Now >= It->Value)
+		{
+			It.RemoveCurrent();
+		}
+	}
+
+	// Walls on the straight line, at the bot height: players, the ball, physics objects (furniture, unlocked doors) and floors are skipped.
+	const FVector Start = Me->GetActorLocation() + FVector(0.f, 0.f, Profile->BreachTraceHeight);
+	const FVector End(Target.X, Target.Y, Start.Z);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WBSoccerBotBreach), false, Me);
+	int32 WallCount = 0;
+	AActor* FirstWall = nullptr;
+	FVector FirstPoint = FVector::ZeroVector;
+	for (int32 Step = 0; Step < Profile->BreachMaxWalls + 8; ++Step)
+	{
+		FHitResult Hit;
+		if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Pawn, Params))
+		{
+			break;
+		}
+		AActor* HitActor = Hit.GetActor();
+		const UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		Params.AddIgnoredActor(HitActor);
+		if (Cast<APawn>(HitActor) || (HitComponent && HitComponent->IsSimulatingPhysics()) || Hit.ImpactNormal.Z > 0.7f)
+		{
+			continue;
+		}
+		// A wall that cannot break (or one the bot gave up on) rules the straight line out.
+		if (!IsBreakable(HitActor) || IgnoredBreachWalls.Contains(HitActor))
+		{
+			BreachWall.Reset();
+			return;
+		}
+		if (!FirstWall)
+		{
+			FirstWall = HitActor;
+			FirstPoint = Hit.ImpactPoint;
+		}
+		if (++WallCount > Profile->BreachMaxWalls)
+		{
+			BreachWall.Reset();
+			return;
+		}
+	}
+	if (!FirstWall)
+	{
+		BreachWall.Reset();
+		return;
+	}
+
+	// Fastest way: the detour through the doors, or the straight line plus the time to break each wall.
+	const float Speed = FMath::Max(1.f, Me->GetCharacterMovement() ? Me->GetCharacterMovement()->GetMaxSpeed() : 1.f);
+	const float StraightTime = FVector::Dist2D(Me->GetActorLocation(), Target) / Speed + WallCount * Profile->BreachWallCostSeconds;
+	const float DetourTime = bPartial ? TNumericLimits<float>::Max() : PathLength / Speed;
+	if (StraightTime < DetourTime)
+	{
+		if (BreachWall.Get() != FirstWall)
+		{
+			BreachStartTime = Now;
+		}
+		BreachWall = FirstWall;
+		BreachPoint = FirstPoint;
+	}
+	else
+	{
+		BreachWall.Reset();
+	}
+}
+
+void AWB_SoccerAIController_Base::TickBreach(ACharacter* Me)
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	AActor* Wall = BreachWall.Get();
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (!Wall)
+	{
+		BreachWall.Reset();
+		PathPoints.Reset();
+		return;
+	}
+	if (Now - BreachStartTime > Profile->BreachMaxDuration)
+	{
+		// Too long on this wall: give up, take the detour.
+		IgnoredBreachWalls.Add(Wall, Now + Profile->BreachIgnoreDuration);
+		BreachWall.Reset();
+		PathPoints.Reset();
+		return;
+	}
+
+	const FVector ToWall = (BreachPoint - Me->GetActorLocation()) * FVector(1.f, 1.f, 0.f);
+	const FVector Direction = ToWall.GetSafeNormal();
+	const float Distance = static_cast<float>(ToWall.Size()) - Me->GetCapsuleComponent()->GetScaledCapsuleRadius();
+	const float Reach = Commands->GetDashDistance() * Profile->DashReachRatio;
+	const float MinRunUp = Commands->GetDashMinRunUp() + Profile->DashRunUpMargin;
+
+	// Run-up: far enough for the Dash to hurt the wall, close enough for it to reach.
+	if (Distance > Reach)
+	{
+		Commands->MoveInWorldDirection(Direction);
+		return;
+	}
+	if (Distance < MinRunUp)
+	{
+		Commands->MoveInWorldDirection(-Direction);
+		return;
+	}
+	Commands->StopMoving();
+	Commands->SetFacingDirection(Direction);
+	if (CanDashNow())
+	{
+		NextDashTime = Now + Profile->DashCooldown;
+		Commands->Dash();
 	}
 }
 
@@ -997,6 +1306,13 @@ bool AWB_SoccerAIController_Base::MoveTowardLocation(ACharacter* Me, const FVect
 	if (PathPoints.Num() < 2 || GetWorld()->GetTimeSeconds() >= NextRepathTime || FVector::Dist2D(Target, PathTarget) > Profile->RepathDistance)
 	{
 		RebuildPath(Me, Target);
+	}
+
+	// The straight line through the walls is faster than the detour: break the first wall.
+	if (BreachWall.IsValid())
+	{
+		TickBreach(Me);
+		return false;
 	}
 
 	while (PathIndex < PathPoints.Num() - 1 && FVector::Dist2D(Location, PathPoints[PathIndex]) <= Profile->WaypointRadius)
@@ -1026,6 +1342,13 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 	{
 		Text += FString::Printf(TEXT(" [%s]"), *UEnum::GetDisplayValueAsText(CurrentRole).ToString());
 	}
+	if (GetActiveProfile()->bUseFeatureFilter)
+	{
+		// Debug filter: show the intent refused this frame, so a still bot is not mistaken for a bug.
+		Text += FilteredIntent != EWB_SoccerAIIntent::Idle
+			? FString::Printf(TEXT("\nFilter: %s off"), *UEnum::GetDisplayValueAsText(FilteredIntent).ToString())
+			: FString(TEXT("\nFilter: on"));
+	}
 	if (CurrentIntent == EWB_SoccerAIIntent::ChaseCarrier || CurrentIntent == EWB_SoccerAIIntent::Press)
 	{
 		// Dash check: reason, predicted spot of the carrier and real reach.
@@ -1038,6 +1361,12 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 		}
 	}
 	DrawDebugString(World, Me->GetActorLocation() + FVector(0.f, 0.f, 140.f), Text, nullptr, FColor::Orange, 0.f, true);
+
+	if (const AActor* Wall = BreachWall.Get())
+	{
+		DrawDebugLine(World, Me->GetActorLocation(), BreachPoint, FColor::Red, false, -1.f, 0, 3.f);
+		DrawDebugString(World, BreachPoint + FVector(0.f, 0.f, 60.f), FString::Printf(TEXT("Breach %s"), *Wall->GetName()), nullptr, FColor::Red, 0.f, true);
+	}
 
 	if (CurrentRole == EWB_SoccerRole::Goalkeeper)
 	{

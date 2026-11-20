@@ -75,6 +75,45 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|Emergency", meta = (ClampMin = "0.05", Units = "s"))
 	float EmergencyShrinkDuration = 0.3f;
 
+	/**
+	 * Over the budget, when no sleeping piece is left to remove, awake (still moving) pieces can be shrunk too.
+	 * Same order as sleeping pieces: smallest first, large protected pieces last, spread across the collections.
+	 * Off by default: an awake piece is never removed.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|Awake")
+	bool bAllowAwakeRemoval = false;
+
+	/** An awake piece faster than this speed (cm/s) is never removed, so a piece in flight does not shrink in front of the players. 0 = no speed limit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|Awake", meta = (ClampMin = "0", Units = "cm/s", EditCondition = "bAllowAwakeRemoval"))
+	float AwakeRemovalMaxSpeed = 100.f;
+
+	/** An awake piece closer than this distance (cm) to the players is never removed. Measured with DistanceMode. 0 = no distance limit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|Awake", meta = (ClampMin = "0", Units = "cm", EditCondition = "bAllowAwakeRemoval"))
+	float AwakeRemovalMinPlayerDistance = 500.f;
+
+	/** An awake piece broken off for less than this time (seconds) is never removed, so a wall that just exploded does not shrink at once. 0 = no age limit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|Awake", meta = (ClampMin = "0", Units = "s", EditCondition = "bAllowAwakeRemoval"))
+	float AwakeRemovalMinAge = 3.f;
+
+	/**
+	 * When a Geometry Collection breaks, its smallest pieces (SmallestOnBreakShare of them) are shrunk as soon as they break off,
+	 * moving or not, whatever the budget. Thins the rubble at once. Off by default.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|On Break")
+	bool bRemoveSmallestOnBreak = false;
+
+	/** Share (0..1) of the pieces of each collection, the smallest ones by volume, removed as soon as they break off. 0.25 = the smallest quarter. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|On Break", meta = (ClampMin = "0", ClampMax = "1", EditCondition = "bRemoveSmallestOnBreak"))
+	float SmallestOnBreakShare = 0.25f;
+
+	/** Seconds between the moment a marked piece breaks off and the start of its shrink, so the players see it fly first. 0 = at once. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|On Break", meta = (ClampMin = "0", Units = "s", EditCondition = "bRemoveSmallestOnBreak"))
+	float SmallestOnBreakDelay = 0.3f;
+
+	/** Shrink duration in seconds of a piece removed on break. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|On Break", meta = (ClampMin = "0.05", Units = "s", EditCondition = "bRemoveSmallestOnBreak"))
+	float SmallestOnBreakShrinkDuration = 1.f;
+
 	/** How the distance to the players is measured when sorting candidates (farthest pieces are removed first). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Debris|Distance")
 	EWB_DebrisDistanceMode DistanceMode = EWB_DebrisDistanceMode::NearestPlayer;

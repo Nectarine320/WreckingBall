@@ -112,8 +112,15 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnRegister() override;
 
 private:
+	/**
+	 * NavMesh rule (user decision 2026-11-20): a locked door cuts the NavMesh like a wall; an unlocked or torn off door does not (the bots push through).
+	 * Applied to DoorBody in the editor (from bStartsLocked, so the editor build is right) and at runtime on each lock change.
+	 */
+	void UpdateNavigationBlocking();
+
 	UPrimitiveComponent* GetBody() const;
 	UPhysicsConstraintComponent* GetConstraint() const;
 	USceneComponent* FindHingePivot() const;
