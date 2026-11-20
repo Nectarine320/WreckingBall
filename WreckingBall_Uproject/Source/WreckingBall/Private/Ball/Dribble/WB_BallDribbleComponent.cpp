@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "Player/State/WB_PlayerStateComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWBBallDribble, Log, All);
@@ -65,8 +66,14 @@ bool UWB_BallDribbleComponent::StartDribble(AActor* Ball, UWB_BallDribbleProfile
 
 	// The player's own capsule must not be blocked by (nor push) the ball it dribbles. Opponents still collide with it.
 	Character->GetCapsuleComponent()->IgnoreActorWhenMoving(Ball, true);
+	const bool bNewPossession = Possessor != Character;
 	UWB_BallPossessionSubsystem::SetBallDribbler(this, Ball, Character);
 	SetComponentTickEnabled(true);
+
+	if (bNewPossession && Profile->CatchSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Profile->CatchSound, Ball->GetActorLocation(), Profile->CatchSoundVolume);
+	}
 	return true;
 }
 

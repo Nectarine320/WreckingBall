@@ -19,6 +19,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogWBPlayerState, Log, All);
 
 namespace
 {
+	/** Gap in cm still counted as the ball touching the capsule: the ball bounces off in the frame it touches. Technical value. */
+	constexpr float BodyContactTolerance = 10.f;
+
 	/** Last segment of a tag for the debug text ("Player.State.Free" -> "Free"). */
 	FString ShortTagName(const FGameplayTag& Tag)
 	{
@@ -327,8 +330,15 @@ void UWB_PlayerStateComponent::TickBallCatch()
 		const UPrimitiveComponent* Body = UWB_BallPossessionSubsystem::FindBallBody(Ball);
 		const FVector BallLocation = Body ? Body->GetComponentLocation() : Ball->GetActorLocation();
 		const float BallRadius = Body ? Body->Bounds.SphereRadius : 0.f;
-		if (FVector::Dist2D(BallLocation, Center) > Profile->BallCatchRadius + BallRadius
-			|| FMath::Abs(BallLocation.Z - Center.Z) > HalfHeight + BallRadius)
+		if (FMath::Abs(BallLocation.Z - Center.Z) > HalfHeight + BallRadius)
+		{
+			continue;
+		}
+		// In front of the feet (catch zone), or touching the capsule anywhere (back, sides): a ball that hits the player is caught.
+		const bool bInCatchZone = FVector::Dist2D(BallLocation, Center) <= Profile->BallCatchRadius + BallRadius;
+		const bool bTouchingBody = FVector::Dist2D(BallLocation, Character->GetActorLocation())
+			<= Character->GetCapsuleComponent()->GetScaledCapsuleRadius() + BallRadius + BodyContactTolerance;
+		if (!bInCatchZone && !bTouchingBody)
 		{
 			continue;
 		}

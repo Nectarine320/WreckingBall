@@ -49,7 +49,15 @@ public:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SoccerAI")
 	EWB_SoccerAIIntent CurrentIntent = EWB_SoccerAIIntent::Idle;
 
-	/** Team of the possessed player (TeamIndex of its UWB_PlayerHitComponent). -1: no team. */
+	/** True: the bot keeps its pawn but does nothing (the pawn stands still). Set by the match roster (ToggleBots); false by default. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SoccerAI")
+	bool bBrainPaused = false;
+
+	/** Pauses or resumes the bot brain (bBrainPaused). A paused bot stops moving at once. */
+	UFUNCTION(BlueprintCallable, Category = "SoccerAI")
+	void SetBrainPaused(bool bPaused);
+
+	/** Team of the possessed player (UWB_TeamLibrary::GetTeamOf: its PlayerState, else the copy in its UWB_PlayerHitComponent). -1: no team. */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	int32 GetTeamIndex() const;
 

@@ -4,6 +4,8 @@
 #include "Engine/DataAsset.h"
 #include "WB_BallDribbleProfile.generated.h"
 
+class USoundBase;
+
 /**
  * How a possessed ball is dribbled on the ground (DA_BallDribble_Default, dribble devis 2026-11-19).
  * Read every frame by UWB_BallDribbleComponent: the ball stays fully simulated (gravity, floor, bounces) and is only pushed flat
@@ -109,4 +111,14 @@ public:
 	/** Under this player speed (cm/s), touches stop and the ball follows the dribble point continuously, so it settles at the feet. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Touches", meta = (ClampMin = "0", EditCondition = "bUseTouches"))
 	float TouchMinPlayerSpeed = 150.f;
+
+	// ---- Feedback ----
+
+	/** Sound played at the ball each time a player takes possession of it (catch, pass received, steal). Empty: no sound. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Feedback")
+	TObjectPtr<USoundBase> CatchSound;
+
+	/** Volume multiplier of CatchSound. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Feedback", meta = (ClampMin = "0"))
+	float CatchSoundVolume = 1.f;
 };

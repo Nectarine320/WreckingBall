@@ -7,6 +7,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "Match/WB_TeamGoalComponent.h"
+#include "Match/WB_TeamLibrary.h"
 #include "NavigationData.h"
 #include "NavigationSystem.h"
 #include "Player/Command/WB_PlayerCommandComponent.h"
@@ -49,7 +50,20 @@ const UWB_SoccerAIProfile* AWB_SoccerAIController_Base::GetActiveProfile() const
 
 int32 AWB_SoccerAIController_Base::GetTeamIndex() const
 {
-	return PlayerHit ? PlayerHit->TeamIndex : -1;
+	return UWB_TeamLibrary::GetTeamOf(GetPawn());
+}
+
+void AWB_SoccerAIController_Base::SetBrainPaused(bool bPaused)
+{
+	bBrainPaused = bPaused;
+	if (bPaused)
+	{
+		if (Commands)
+		{
+			Commands->StopMoving();
+		}
+		ResetBrain();
+	}
 }
 
 FGenericTeamId AWB_SoccerAIController_Base::GetGenericTeamId() const
@@ -64,9 +78,9 @@ bool AWB_SoccerAIController_Base::IsOpponent(const APawn* Other) const
 	{
 		return false;
 	}
-	const UWB_PlayerHitComponent* OtherHit = Other->FindComponentByClass<UWB_PlayerHitComponent>();
 	const int32 MyTeam = GetTeamIndex();
-	return !OtherHit || MyTeam < 0 || OtherHit->TeamIndex < 0 || OtherHit->TeamIndex != MyTeam;
+	const int32 OtherTeam = UWB_TeamLibrary::GetTeamOf(Other);
+	return MyTeam < 0 || OtherTeam < 0 || OtherTeam != MyTeam;
 }
 
 UWB_TeamGoalComponent* AWB_SoccerAIController_Base::GetGoalToAttack() const
@@ -148,7 +162,7 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	ACharacter* Me = GetCharacter();
-	if (!Me || !Commands || !PlayerStateComp)
+	if (!Me || !Commands || !PlayerStateComp || bBrainPaused)
 	{
 		return;
 	}

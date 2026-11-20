@@ -175,7 +175,13 @@ void UWB_BallPossessionSubsystem::SetBallDribbler(const UObject* WorldContextObj
 	UWB_BallPossessionSubsystem* Self = Get(WorldContextObject);
 	if (Self && Ball && Player)
 	{
+		const TWeakObjectPtr<AActor>* Previous = Self->Dribblers.Find(Ball);
+		AActor* OldPossessor = Previous ? Previous->Get() : nullptr;
 		Self->Dribblers.Add(Ball, Player);
+		if (OldPossessor != Player)
+		{
+			Self->OnBallPossessionChanged.Broadcast(Ball, Player, OldPossessor);
+		}
 	}
 }
 
@@ -185,7 +191,12 @@ void UWB_BallPossessionSubsystem::ClearBallDribbler(const UObject* WorldContextO
 	const TWeakObjectPtr<AActor>* Dribbler = Self ? Self->Dribblers.Find(Ball) : nullptr;
 	if (Dribbler && (!Dribbler->IsValid() || Dribbler->Get() == Player))
 	{
+		AActor* OldPossessor = Dribbler->Get();
 		Self->Dribblers.Remove(Ball);
+		if (OldPossessor)
+		{
+			Self->OnBallPossessionChanged.Broadcast(const_cast<AActor*>(Ball), nullptr, OldPossessor);
+		}
 	}
 }
 

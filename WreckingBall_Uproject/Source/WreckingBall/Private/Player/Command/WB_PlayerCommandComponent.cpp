@@ -4,9 +4,12 @@
 #include "GameFramework/Controller.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
+#include "Ball/Dribble/WB_BallDribbleComponent.h"
 #include "Player/Dash/WB_PlayerDashProfile.h"
+#include "Player/Pass/WB_PassProfile.h"
 #include "Player/Energy/WB_PlayerEnergyProfile.h"
 #include "Player/State/WB_PlayerStateComponent.h"
+#include "Player/State/WB_PlayerStateTags.h"
 #include "UObject/UnrealType.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWBPlayerCommand, Log, All);
@@ -60,6 +63,66 @@ void UWB_PlayerCommandComponent::KickPress()
 void UWB_PlayerCommandComponent::KickRelease()
 {
 	OnKickReleaseCommand.Broadcast();
+}
+
+bool UWB_PlayerCommandComponent::IsHoldingBall() const
+{
+	const AActor* Owner = GetOwner();
+	const UWB_PlayerStateComponent* State = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	return State && State->CurrentHolding.MatchesTag(WBTags::Player_Holding_Ball);
+}
+
+bool UWB_PlayerCommandComponent::ComputePassVelocity(APawn* Receiver, FVector& OutVelocity) const
+{
+	OutVelocity = FVector::ZeroVector;
+	const AActor* Owner = GetOwner();
+	if (!Owner || !Receiver)
+	{
+		return false;
+	}
+	if (!PassProfile)
+	{
+		if (!bWarnedNoPassProfile)
+		{
+			bWarnedNoPassProfile = true;
+			UE_LOG(LogWBPlayerCommand, Warning, TEXT("%s: no PassProfile on %s (DA_Pass_Default expected). Passes are refused."), *GetNameSafe(Owner), *GetName());
+		}
+		return false;
+	}
+	const UWB_BallDribbleComponent* Dribble = Owner->FindComponentByClass<UWB_BallDribbleComponent>();
+	const AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
+	if (!Ball)
+	{
+		return false;
+	}
+	float MaxKickSpeed = 0.f;
+	if (!PassProfile->ReadBallMaxKickSpeed(Ball, MaxKickSpeed))
+	{
+		return false;
+	}
+	return PassProfile->ComputePassVelocity(Ball->GetActorLocation(), Receiver->GetActorLocation(), Receiver->GetVelocity(), MaxKickSpeed, OutVelocity);
+}
+
+bool UWB_PlayerCommandComponent::RequestPass(APawn* Receiver)
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner || !Receiver || Receiver == Owner || !IsHoldingBall())
+	{
+		return false;
+	}
+	const UWB_PlayerStateComponent* State = Owner->FindComponentByClass<UWB_PlayerStateComponent>();
+	if (!State || !State->IsInState(WBTags::Player_State_Free))
+	{
+		return false;
+	}
+	FVector Velocity;
+	if (!ComputePassVelocity(Receiver, Velocity))
+	{
+		return false;
+	}
+	SetFacingDirection(Velocity);
+	OnPassCommand.Broadcast(Receiver, Velocity);
+	return !IsHoldingBall();
 }
 
 void UWB_PlayerCommandComponent::SetFacingDirection(FVector WorldDirection)

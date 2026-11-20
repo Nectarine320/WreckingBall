@@ -7,6 +7,8 @@
 class UPrimitiveComponent;
 class UNiagaraComponent;
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FWB_OnBallPossessionChanged, AActor*, Ball, AActor*, NewPossessor, AActor*, OldPossessor);
+
 /** Kick record of one ball: who kicked it, when, and whether it is still in kicked mode. */
 USTRUCT()
 struct FWB_BallKickRecord
@@ -45,6 +47,13 @@ class WRECKINGBALL_API UWB_BallPossessionSubsystem : public UTickableWorldSubsys
 	GENERATED_BODY()
 
 public:
+	/**
+	 * Called when the dribbler of a ball changes: a player catches it (NewPossessor set) or loses, passes or kicks it (NewPossessor None).
+	 * A direct steal fires once, with both possessors set. Bind through Get WB_BallPossessionSubsystem.
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "BallPossession")
+	FWB_OnBallPossessionChanged OnBallPossessionChanged;
+
 	/**
 	 * Records a kick of Ball by Kicker (call right after the kick impulse). The ball enters kicked mode until its speed drops under
 	 * KickedReleaseSpeed (cm/s, from the ball's PDA_PhysicsProfile). Also starts the kicker re-catch delay, even for a weak kick.

@@ -5,14 +5,16 @@
 #include "WB_PlayerCommandComponent.generated.h"
 
 class UWB_PlayerDashProfile;
+class UWB_PassProfile;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnMoveCommand, float, XAxis, float, YAxis);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWB_OnPlayerCommand);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnPassCommand, APawn*, Receiver, FVector, BallVelocity);
 
 /**
  * Single entry point for the commands of a player (bot AI today, possibly the human controller later).
  * Added to BP_GenericCharacter. It does not act by itself: each command fires a dispatcher that the Blueprint
- * binds to the matching Request* function (RequestMove, RequestDash, RequestGrab, RequestKickOrThrow, ReleaseKickOrThrow),
+ * binds to the matching Request* function (RequestMove, RequestDash, RequestGrab, RequestKickOrThrow, ReleaseKickOrThrow, pass),
  * so a bot follows exactly the same rules as a human player (states, energy, refusals).
  */
 UCLASS(Blueprintable, ClassGroup = (WreckingBall), meta = (BlueprintSpawnableComponent))
@@ -42,6 +44,29 @@ public:
 	/** Kick / throw release: sends the held ball or object along the actor forward. Bind to ReleaseKickOrThrow. */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
 	FWB_OnPlayerCommand OnKickReleaseCommand;
+
+	/** Pass command: the Blueprint releases the dribbled ball and sets its velocity to BallVelocity (cm/s, flat), toward Receiver. Fired by RequestPass. */
+	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand|Pass")
+	FWB_OnPassCommand OnPassCommand;
+
+	/** Pass settings (DA_Pass_Default). Required for RequestPass: empty, the pass is refused and a warning is logged. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Pass")
+	TObjectPtr<UWB_PassProfile> PassProfile;
+
+	/**
+	 * Passes the dribbled ball to Receiver along the ground (PassProfile): turns the owner toward the pass, then fires OnPassCommand.
+	 * Refused when the owner does not hold the ball or is not Free (charging a kick, Dashing...). Returns true when the ball left the owner.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
+	bool RequestPass(APawn* Receiver);
+
+	/** Flat ball velocity (cm/s) of a pass from the dribbled ball to Receiver (PassProfile). False when the owner dribbles no ball or a setting is missing. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Pass", meta = (ReturnDisplayName = "Valid"))
+	bool ComputePassVelocity(APawn* Receiver, FVector& OutVelocity) const;
+
+	/** True while the owner holds the ball (Player.Holding.Ball). */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand")
+	bool IsHoldingBall() const;
 
 	/** Moves toward a world direction (flattened, Scale 0-1 like a stick tilt). Converted to shared-camera stick axes, then OnMoveCommand. Call every frame. */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
@@ -133,6 +158,9 @@ private:
 
 	/** Variables already reported as missing, so the warning is logged once. */
 	mutable TSet<FName> WarnedVariables;
+
+	/** Missing PassProfile already reported. */
+	mutable bool bWarnedNoPassProfile = false;
 
 	/** Missing DashProfile already reported. */
 	mutable bool bWarnedNoDashProfile = false;

@@ -128,7 +128,9 @@ bool UWB_SoccerBotManagerComponent::RemoveLastLocalPlayer()
 	}
 
 	OnLocalPlayerRemoving.Broadcast(PlayerIndex, Pawn);
-	if (Pawn)
+	// The match roster may hand the pawn to a bot while the player leaves (UWB_TeamRosterComponent::ReleaseHumanCharacter): keep it then.
+	const AController* PawnController = Pawn ? Pawn->GetController() : nullptr;
+	if (Pawn && (!PawnController || PawnController == PlayerController))
 	{
 		Pawn->Destroy();
 	}

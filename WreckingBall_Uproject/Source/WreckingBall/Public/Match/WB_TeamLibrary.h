@@ -29,6 +29,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Team")
 	static bool AreTeammates(const AActor* A, const AActor* B);
 
+	/** True when a PlayerController (a human player) controls Pawn. */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	static bool IsHumanControlled(const APawn* Pawn);
+
+	/**
+	 * Teammate of From that best matches Direction (world, flattened): the smallest angle wins, the nearer one on a tie.
+	 * Direction near zero (stick at rest): the nearest teammate. Never an opponent, never From itself.
+	 * bOnlyAIControlled: only teammates driven by an AIController (a character switch never takes another human's character).
+	 * None when no teammate matches.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Team")
+	static APawn* FindDirectionalAlly(const APawn* From, FVector Direction, bool bOnlyAIControlled);
+
 	/** AWB_SoccerPlayerState of Actor (a pawn, a controller or the PlayerState itself). None for a pawn driven by a bot. */
 	UFUNCTION(BlueprintPure, Category = "Team")
 	static AWB_SoccerPlayerState* GetSoccerPlayerState(const AActor* Actor);
