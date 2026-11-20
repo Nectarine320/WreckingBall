@@ -501,6 +501,64 @@ void UWB_TeamRosterComponent::HandleBallPossessionChanged(AActor* Ball, AActor* 
 			SwitchToCharacter(Pass.PlayerController.Get(), Receiver);
 		}
 	}
+
+	// A roster character took the ball: remember a human holder, or give a bot holder to a human of its team.
+	APawn* Holder = Cast<APawn>(NewPossessor);
+	if (!Holder || !bBuilt || !RosterProfile || !FindEntry(Holder))
+	{
+		return;
+	}
+	const int32 Team = UWB_TeamLibrary::GetTeamOf(Holder);
+	if (APlayerController* HumanHolder = Cast<APlayerController>(Holder->GetController()))
+	{
+		LastHumanHolders.Add(Team, HumanHolder);
+		return;
+	}
+	if (RosterProfile->bTakeBotCarrier && Cast<AWB_SoccerAIController_Base>(Holder->GetController()))
+	{
+		if (APlayerController* Human = FindHumanForTeam(Team, Holder))
+		{
+			SwitchToCharacter(Human, Holder);
+			LastHumanHolders.Add(Team, Human);
+		}
+	}
+}
+
+APlayerController* UWB_TeamRosterComponent::FindHumanForTeam(int32 TeamIndex, const APawn* Near) const
+{
+	if (TeamIndex < 0)
+	{
+		return nullptr;
+	}
+	if (const TWeakObjectPtr<APlayerController>* Last = LastHumanHolders.Find(TeamIndex))
+	{
+		APlayerController* PlayerController = Last->Get();
+		if (PlayerController && PlayerController->GetPawn() && UWB_TeamLibrary::GetTeamOf(PlayerController) == TeamIndex)
+		{
+			return PlayerController;
+		}
+	}
+
+	APlayerController* Best = nullptr;
+	double BestDistance = TNumericLimits<double>::Max();
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const int32 NumLocal = GameInstance ? GameInstance->GetNumLocalPlayers() : 0;
+	for (int32 i = 0; i < NumLocal; ++i)
+	{
+		APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, i);
+		const APawn* Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+		if (!Pawn || UWB_TeamLibrary::GetTeamOf(PlayerController) != TeamIndex)
+		{
+			continue;
+		}
+		const double Distance = Near ? FVector::DistSquared(Pawn->GetActorLocation(), Near->GetActorLocation()) : 0.0;
+		if (Distance < BestDistance)
+		{
+			Best = PlayerController;
+			BestDistance = Distance;
+		}
+	}
+	return Best;
 }
 
 // ---- Bots ----

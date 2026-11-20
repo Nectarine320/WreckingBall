@@ -156,3 +156,32 @@ FVector AWB_TeamSpawnPoint::GetKickoffBallLocation(const UObject* WorldContextOb
 	UE_LOG(LogWBTeamSpawn, Warning, TEXT("GetKickoffBallLocation: no NavMesh nor floor under the world origin, the ball appears at (0, 0, 0)."));
 	return FVector::ZeroVector;
 }
+
+bool AWB_TeamSpawnPoint::PlaceOnFloor(AActor* Actor)
+{
+	UWorld* World = Actor ? Actor->GetWorld() : nullptr;
+	if (!World)
+	{
+		return false;
+	}
+	FVector Origin;
+	FVector Extent;
+	Actor->GetActorBounds(true, Origin, Extent);
+
+	// From a bit above the actor straight down (search heights: technical values). The gym floors are WorldDynamic: Visibility hits them.
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WBPlaceOnFloor), false, Actor);
+	const FVector Start = Origin + FVector(0.f, 0.f, Extent.Z + 100.f);
+	FHitResult Hit;
+	if (!World->LineTraceSingleByChannel(Hit, Start, Start - FVector(0.f, 0.f, 5000.f), ECC_Visibility, Params))
+	{
+		UE_LOG(LogWBTeamSpawn, Warning, TEXT("PlaceOnFloor: no floor found under %s, left where it is."), *Actor->GetName());
+		return false;
+	}
+
+	// Gap kept between the bottom of the collision and the floor, so the body does not start inside it. Technical value.
+	constexpr float FloorGap = 1.f;
+	const float BottomZ = Origin.Z - Extent.Z;
+	const FVector Offset(0.f, 0.f, Hit.ImpactPoint.Z + FloorGap - BottomZ);
+	Actor->SetActorLocation(Actor->GetActorLocation() + Offset, false, nullptr, ETeleportType::TeleportPhysics);
+	return true;
+}

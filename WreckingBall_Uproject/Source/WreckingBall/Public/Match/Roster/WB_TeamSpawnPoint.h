@@ -65,6 +65,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TeamSpawn", meta = (WorldContext = "WorldContextObject"))
 	static FVector GetKickoffBallLocation(const UObject* WorldContextObject, int32 ConcedingTeamIndex = -1);
 
+	/**
+	 * Puts Actor on the floor below it: traces down (Visibility) from above its collision bounds and moves it so the bottom of its colliding
+	 * components rests on the hit floor, whatever its pivot. Call right after spawning a ball. Returns false (Actor not moved) when no floor is found.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TeamSpawn", meta = (ReturnDisplayName = "Placed"))
+	static bool PlaceOnFloor(AActor* Actor);
+
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 private:

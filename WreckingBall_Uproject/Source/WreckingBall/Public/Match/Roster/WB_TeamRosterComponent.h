@@ -145,7 +145,16 @@ private:
 	};
 	TArray<FPendingPass> PendingPasses;
 
-	/** Ends a pending pass when its ball is caught: the passer takes the receiver, or the pass is cancelled (interception). */
+	/** Per team: the human who held the ball last (chooses who takes a bot carrier when the team has several humans). */
+	TMap<int32, TWeakObjectPtr<APlayerController>> LastHumanHolders;
+
+	/** Human of TeamIndex who should take a bot carrier: the last human holder of the team, else the nearest to Near. None when the team has no human. */
+	APlayerController* FindHumanForTeam(int32 TeamIndex, const APawn* Near) const;
+
+	/**
+	 * Called on each possession change. Ends a pending pass (the passer takes the receiver, or the pass is cancelled on an interception),
+	 * then, with RosterProfile->bTakeBotCarrier, gives a bot teammate who takes the ball to a human of its team.
+	 */
 	UFUNCTION()
 	void HandleBallPossessionChanged(AActor* Ball, AActor* NewPossessor, AActor* OldPossessor);
 

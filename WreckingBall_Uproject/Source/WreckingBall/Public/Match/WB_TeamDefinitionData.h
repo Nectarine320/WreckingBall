@@ -25,6 +25,10 @@ struct WRECKINGBALL_API FWB_TeamDefinition
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Team")
 	FLinearColor RingColor = FLinearColor::White;
 
+	/** Color of the off-screen indicator sphere of the team's humans (P1-P4 at the screen edge). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Team")
+	FLinearColor IndicatorColor = FLinearColor::White;
+
 	/** Material put on the character mesh (slot 0): MI_TeamRed, MI_TeamBlue. Empty: the mesh material is not changed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Team")
 	TObjectPtr<UMaterialInterface> TeamMaterial = nullptr;
