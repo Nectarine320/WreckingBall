@@ -1,6 +1,7 @@
 #include "AI/WB_SoccerAIController_Base.h"
 
 #include "AI/WB_SoccerAIProfile.h"
+#include "AI/Team/WB_TeamCoordinatorComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
@@ -89,6 +90,18 @@ UWB_TeamGoalComponent* AWB_SoccerAIController_Base::GetGoalToAttack() const
 	return Me ? UWB_TeamGoalComponent::FindGoalToAttack(this, GetTeamIndex(), Me->GetActorLocation()) : nullptr;
 }
 
+UWB_TeamGoalComponent* AWB_SoccerAIController_Base::GetGoalToDefend() const
+{
+	return UWB_TeamGoalComponent::FindGoalDefendedBy(this, GetTeamIndex());
+}
+
+void AWB_SoccerAIController_Base::SetTeamRole(EWB_SoccerRole InRole, EWB_TeamSituation InSituation, APawn* InPressTarget)
+{
+	CurrentRole = InRole;
+	TeamSituation = InSituation;
+	PressTarget = InPressTarget;
+}
+
 APawn* AWB_SoccerAIController_Base::FindBallCarrier() const
 {
 	UWorld* World = GetWorld();
@@ -129,6 +142,9 @@ void AWB_SoccerAIController_Base::OnUnPossess()
 	PlayerStateComp = nullptr;
 	PlayerHit = nullptr;
 	Commands = nullptr;
+	// The role belongs to the character: the coordinator gives the new one at its next evaluation.
+	CurrentRole = EWB_SoccerRole::None;
+	PressTarget.Reset();
 	ResetBrain();
 	Super::OnUnPossess();
 }
@@ -150,6 +166,27 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 	{
 		return EWB_SoccerAIIntent::Attack;
 	}
+
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (Profile && Profile->bUseTeamRoles && CurrentRole != EWB_SoccerRole::None)
+	{
+		if (CurrentRole != EWB_SoccerRole::Attacker && PressTarget.IsValid())
+		{
+			return EWB_SoccerAIIntent::Press;
+		}
+		const bool bTeamHasBall = TeamSituation == EWB_TeamSituation::Attacking;
+		switch (CurrentRole)
+		{
+		case EWB_SoccerRole::Defender:
+			return bTeamHasBall ? EWB_SoccerAIIntent::Support : EWB_SoccerAIIntent::Defend;
+		case EWB_SoccerRole::Goalkeeper:
+			// The team holds the ball: the Goalkeeper becomes a defender only once the ball is in enemy territory.
+			return (bTeamHasBall && IsBallInEnemyTerritory()) ? EWB_SoccerAIIntent::LastMan : EWB_SoccerAIIntent::GuardGoal;
+		default:
+			break; // Attacker: same as the legacy brain below.
+		}
+	}
+
 	if (const APawn* Carrier = FindBallCarrier())
 	{
 		return IsOpponent(Carrier) ? EWB_SoccerAIIntent::ChaseCarrier : EWB_SoccerAIIntent::Support;
@@ -215,6 +252,10 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	case EWB_SoccerAIIntent::ChaseCarrier: TickChaseCarrier(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::Support:      TickSupport(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::Attack:       TickAttack(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::Press:        TickPress(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::Defend:       TickDefend(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::GuardGoal:    TickGuardGoal(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::LastMan:      TickLastMan(Me, DeltaSeconds); break;
 	default:                               Commands->StopMoving(); break;
 	}
 
@@ -274,14 +315,18 @@ void AWB_SoccerAIController_Base::TickSeekBall(ACharacter* Me, float DeltaSecond
 
 void AWB_SoccerAIController_Base::TickChaseCarrier(ACharacter* Me, float DeltaSeconds)
 {
-	const APawn* Carrier = FindBallCarrier();
+	APawn* Carrier = FindBallCarrier();
 	if (!Carrier)
 	{
 		Commands->StopMoving();
 		return;
 	}
+	ChaseAndDash(Me, Carrier);
+}
 
-	if (TryDashOn(Me, const_cast<APawn*>(Carrier)))
+void AWB_SoccerAIController_Base::ChaseAndDash(ACharacter* Me, APawn* Target)
+{
+	if (TryDashOn(Me, Target))
 	{
 		return;
 	}
@@ -499,6 +544,156 @@ void AWB_SoccerAIController_Base::MoveToSupportSpot(ACharacter* Me, const FVecto
 	MoveTowardLocation(Me, Spot);
 }
 
+bool AWB_SoccerAIController_Base::IsBallInEnemyTerritory() const
+{
+	const AActor* Ball = CachedBall.Get();
+	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
+	const UWB_TeamGoalComponent* OtherGoal = GetGoalToAttack();
+	if (!Ball || !OwnGoal || !OtherGoal)
+	{
+		return false;
+	}
+	const FVector Axis = (OtherGoal->GetAimLocation() - OwnGoal->GetAimLocation()) * FVector(1.f, 1.f, 0.f);
+	const double LengthSq = Axis.SizeSquared();
+	if (LengthSq < KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+	// Share of the way along the goal - goal axis, 0 at the own goal, 1 at the opponent goal.
+	const double Share = FVector::DotProduct(Ball->GetActorLocation() - OwnGoal->GetAimLocation(), Axis) / LengthSq;
+	return Share > GetActiveProfile()->GoalkeeperAdvanceFieldShare;
+}
+
+bool AWB_SoccerAIController_Base::GetThreatLocation(FVector& OutLocation) const
+{
+	if (const APawn* Carrier = FindBallCarrier())
+	{
+		if (IsOpponent(Carrier))
+		{
+			OutLocation = Carrier->GetActorLocation();
+			return true;
+		}
+	}
+	if (const AActor* Ball = CachedBall.Get())
+	{
+		OutLocation = Ball->GetActorLocation();
+		return true;
+	}
+	return false;
+}
+
+void AWB_SoccerAIController_Base::HoldSpot(ACharacter* Me, const FVector& Spot, const FVector& LookAt, float DeltaSeconds)
+{
+	if (MoveTowardLocation(Me, Spot))
+	{
+		const FVector ToLook = (LookAt - Me->GetActorLocation()).GetSafeNormal2D();
+		if (!ToLook.IsNearlyZero())
+		{
+			TurnToward(Me, ToLook, DeltaSeconds);
+		}
+	}
+}
+
+void AWB_SoccerAIController_Base::TickPress(ACharacter* Me, float DeltaSeconds)
+{
+	APawn* Target = PressTarget.Get();
+	if (!Target)
+	{
+		Commands->StopMoving();
+		return;
+	}
+	// The target holds the ball: same chase and Dash as on a carrier.
+	if (IsHoldingBall(Target->FindComponentByClass<UWB_PlayerStateComponent>()))
+	{
+		ChaseAndDash(Me, Target);
+		return;
+	}
+	// Otherwise mark it: stand between it and the ball (or its goal side when there is no ball).
+	const FVector TargetLocation = Target->GetActorLocation();
+	FVector Side = FVector::ZeroVector;
+	if (const AActor* Ball = CachedBall.Get())
+	{
+		Side = (Ball->GetActorLocation() - TargetLocation).GetSafeNormal2D();
+	}
+	else if (const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend())
+	{
+		Side = (OwnGoal->GetAimLocation() - TargetLocation).GetSafeNormal2D();
+	}
+	HoldSpot(Me, TargetLocation + Side * GetActiveProfile()->PressMarkDistance, TargetLocation, DeltaSeconds);
+}
+
+void AWB_SoccerAIController_Base::TickDefend(ACharacter* Me, float DeltaSeconds)
+{
+	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
+	FVector Threat;
+	if (!OwnGoal || !GetThreatLocation(Threat))
+	{
+		Commands->StopMoving();
+		return;
+	}
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	const FVector GoalLocation = OwnGoal->GetAimLocation();
+
+	// Defensive zone: half the distance between the two goals (times DefendRadiusScale), around the own goal.
+	float Radius = TNumericLimits<float>::Max();
+	if (const UWB_TeamGoalComponent* OtherGoal = GetGoalToAttack())
+	{
+		Radius = FVector::Dist2D(GoalLocation, OtherGoal->GetAimLocation()) * 0.5f * Profile->DefendRadiusScale;
+	}
+
+	// On the line threat - goal, DefendGapToBall short of the threat, never out of the zone.
+	const FVector ToThreat = (Threat - GoalLocation) * FVector(1.f, 1.f, 0.f);
+	const float Distance = FMath::Clamp(static_cast<float>(ToThreat.Size()) - Profile->DefendGapToBall, 0.f, Radius);
+	const FVector Direction = ToThreat.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToThreat.GetSafeNormal();
+	HoldSpot(Me, GoalLocation + Direction * Distance, Threat, DeltaSeconds);
+}
+
+void AWB_SoccerAIController_Base::TickGuardGoal(ACharacter* Me, float DeltaSeconds)
+{
+	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
+	if (!OwnGoal)
+	{
+		Commands->StopMoving();
+		return;
+	}
+	const FVector GoalLocation = OwnGoal->GetAimLocation();
+	FVector Threat;
+	const bool bHasThreat = GetThreatLocation(Threat);
+	const FVector ToThreat = bHasThreat ? (Threat - GoalLocation).GetSafeNormal2D() : FVector::ZeroVector;
+	const FVector Direction = ToThreat.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToThreat;
+	HoldSpot(Me, GoalLocation + Direction * GetActiveProfile()->GoalkeeperDistance, bHasThreat ? Threat : GoalLocation + Direction * 1000.f, DeltaSeconds);
+}
+
+void AWB_SoccerAIController_Base::TickLastMan(ACharacter* Me, float DeltaSeconds)
+{
+	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
+	const AActor* Ball = CachedBall.Get();
+	if (!OwnGoal || !Ball)
+	{
+		Commands->StopMoving();
+		return;
+	}
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	const FVector GoalLocation = OwnGoal->GetAimLocation();
+	const FVector ToBall = (Ball->GetActorLocation() - GoalLocation) * FVector(1.f, 1.f, 0.f);
+	float Distance = static_cast<float>(ToBall.Size()) * Profile->LastManBallShare;
+
+	// Stay the member nearest to the own goal: behind the teammate closest to it.
+	if (const UWB_TeamCoordinatorComponent* Coordinator = UWB_TeamCoordinatorComponent::GetTeamCoordinator(this, GetTeamIndex()))
+	{
+		for (const FWB_TeamRoleAssignment& Entry : Coordinator->GetAssignments())
+		{
+			if (Entry.Member && Entry.Member.Get() != Me)
+			{
+				Distance = FMath::Min(Distance, static_cast<float>(FVector::Dist2D(Entry.Member->GetActorLocation(), GoalLocation)) - Profile->LastManBehindMargin);
+			}
+		}
+	}
+	Distance = FMath::Max(Distance, Profile->GoalkeeperDistance);
+	const FVector Direction = ToBall.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToBall.GetSafeNormal();
+	HoldSpot(Me, GoalLocation + Direction * Distance, Ball->GetActorLocation(), DeltaSeconds);
+}
+
 FVector AWB_SoccerAIController_Base::GetShotDirection(const ACharacter* Me, const UWB_TeamGoalComponent* Goal)
 {
 	if (!bAimJitterDrawn)
@@ -652,7 +847,11 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 		DrawDebugLine(World, PathPoints[i - 1], PathPoints[i], i == PathIndex ? FColor::Yellow : FColor::Cyan, false, -1.f, 0, 3.f);
 	}
 	FString Text = FString::Printf(TEXT("Bot T%d %s"), GetTeamIndex(), *UEnum::GetDisplayValueAsText(CurrentIntent).ToString());
-	if (CurrentIntent == EWB_SoccerAIIntent::ChaseCarrier)
+	if (CurrentRole != EWB_SoccerRole::None)
+	{
+		Text += FString::Printf(TEXT(" [%s]"), *UEnum::GetDisplayValueAsText(CurrentRole).ToString());
+	}
+	if (CurrentIntent == EWB_SoccerAIIntent::ChaseCarrier || CurrentIntent == EWB_SoccerAIIntent::Press)
 	{
 		// Dash check: reason, predicted spot of the carrier and real reach.
 		Text += FString::Printf(TEXT("\nDash: %s"), *DashBlockReason.ToString());

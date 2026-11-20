@@ -33,6 +33,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "TeamGoal", meta = (WorldContext = "WorldContextObject"))
 	static UWB_TeamGoalComponent* FindGoalToAttack(const UObject* WorldContextObject, int32 AttackingTeamIndex, FVector FromLocation);
 
+	/** The goal TeamIndex defends (DefendingTeamIndex == TeamIndex). None when the world has none or TeamIndex is -1. */
+	UFUNCTION(BlueprintPure, Category = "TeamGoal", meta = (WorldContext = "WorldContextObject"))
+	static UWB_TeamGoalComponent* FindGoalDefendedBy(const UObject* WorldContextObject, int32 TeamIndex);
+
 	/** Every registered goal of the world of WorldContextObject. */
 	UFUNCTION(BlueprintPure, Category = "TeamGoal", meta = (WorldContext = "WorldContextObject"))
 	static TArray<UWB_TeamGoalComponent*> GetAllGoals(const UObject* WorldContextObject);

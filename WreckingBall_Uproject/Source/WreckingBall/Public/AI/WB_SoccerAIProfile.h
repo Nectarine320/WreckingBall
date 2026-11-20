@@ -143,6 +143,82 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Support", meta = (ClampMin = "0"))
 	float SupportLateralOffset = 300.f;
 
+	// ---- Team (phase F: coordinated roles) ----
+
+	/**
+	 * True: the bots play the role given by the team coordinator (UWB_TeamCoordinatorComponent on the GameMode): Attacker, Defender, Goalkeeper.
+	 * False, or no coordinator: every bot uses the legacy brain (everyone goes for the ball).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Team")
+	bool bUseTeamRoles = false;
+
+	/** Seconds between two role evaluations of a team coordinator. A possession change or a character switch also triggers one at once. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Team", meta = (ClampMin = "0.05"))
+	float RoleUpdateInterval = 0.3f;
+
+	/**
+	 * Hysteresis against role flicker: a member takes the Attacker (or Goalkeeper) role from the current one only when it is nearer to the ball
+	 * (or to its goal) by more than this many cm.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Team", meta = (ClampMin = "0"))
+	float RoleSwitchMargin = 150.f;
+
+	/** Hysteresis: a member keeps a new role at least this many seconds (a possession change bypasses it: the carrier is the Attacker at once). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Team", meta = (ClampMin = "0"))
+	float RoleMinHoldTime = 0.75f;
+
+	/**
+	 * True: the press rule (one bot always presses the opponent attacker) also applies while the team holds the ball.
+	 * False: only while the team defends (free ball or opponent ball).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Team")
+	bool bPressWhileAttacking = false;
+
+	/** A pressing bot whose target does not hold the ball marks it: it stands this many cm from the target, on the side of the ball. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Team", meta = (ClampMin = "0"))
+	float PressMarkDistance = 150.f;
+
+	/** Draws the role of every team member (human or bot) above its head, and the press link. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Team")
+	bool bDrawRoleDebug = false;
+
+	// ---- Defender ----
+
+	/**
+	 * Defensive zone of the Defender: a radius around its own goal, equal to half the distance between the two goals times this.
+	 * 1: half of the field.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender", meta = (ClampMin = "0.1", ClampMax = "2"))
+	float DefendRadiusScale = 1.f;
+
+	/** The Defender stands on the line ball - own goal, this many cm from the ball (or from the carrier), toward its goal. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender", meta = (ClampMin = "0"))
+	float DefendGapToBall = 400.f;
+
+	// ---- Goalkeeper ----
+
+	/** The Goalkeeper stands this many cm in front of its goal, on the line ball - goal center. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
+	float GoalkeeperDistance = 300.f;
+
+	/**
+	 * When the team holds the ball, the Goalkeeper stays in its goal while the ball is in its own territory, and moves up as the last man (a defender)
+	 * once the ball goes past this share of the way from its goal to the opponent goal. 0.5: the middle line.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0", ClampMax = "1"))
+	float GoalkeeperAdvanceFieldShare = 0.5f;
+
+	/**
+	 * Last man (the team holds the ball): the Goalkeeper moves up to this share of the way from its goal to the ball,
+	 * and stays the member of its team nearest to its goal.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0", ClampMax = "1"))
+	float LastManBallShare = 0.35f;
+
+	/** Last man: cm kept between the Goalkeeper and its goal, compared with the teammate nearest to that goal (it stays behind that teammate). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
+	float LastManBehindMargin = 200.f;
+
 	// ---- Debug ----
 
 	/** Draws the path, the intent and the shooting zone of each bot. */

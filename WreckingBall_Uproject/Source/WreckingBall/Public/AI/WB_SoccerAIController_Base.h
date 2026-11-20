@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AIController.h"
+#include "AI/Team/WB_SoccerTeamTypes.h"
 #include "WB_SoccerAIController_Base.generated.h"
 
 class ACharacter;
@@ -24,7 +25,15 @@ enum class EWB_SoccerAIIntent : uint8
 	/** A teammate carries the ball: run ahead of it, toward the opponent goal. */
 	Support,
 	/** The bot holds the ball: reach the shooting zone, aim, charge and shoot. */
-	Attack
+	Attack,
+	/** Team roles: press the opponent attacker given by the coordinator (chase and Dash when it holds the ball, else mark it on the ball side). */
+	Press,
+	/** Team roles, Defender while the team defends: stand between the ball (or carrier) and the own goal, inside the defensive zone. */
+	Defend,
+	/** Team roles, Goalkeeper while the team defends: stand in front of the own goal, on the line ball - goal center. */
+	GuardGoal,
+	/** Team roles, Goalkeeper while the team holds the ball: move up, staying the member of the team nearest to the own goal. */
+	LastMan
 };
 
 /**
@@ -56,6 +65,26 @@ public:
 	/** Pauses or resumes the bot brain (bBrainPaused). A paused bot stops moving at once. */
 	UFUNCTION(BlueprintCallable, Category = "SoccerAI")
 	void SetBrainPaused(bool bPaused);
+
+	/** Role given by the team coordinator (UWB_TeamCoordinatorComponent). None: legacy brain (no coordinator, or AIProfile->bUseTeamRoles off). */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SoccerAI|Team")
+	EWB_SoccerRole CurrentRole = EWB_SoccerRole::None;
+
+	/** Situation of the team, given with the role. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "SoccerAI|Team")
+	EWB_TeamSituation TeamSituation = EWB_TeamSituation::Defending;
+
+	/** Called by the team coordinator at each evaluation. InPressTarget: the opponent this bot must press (None when it does not press). */
+	UFUNCTION(BlueprintCallable, Category = "SoccerAI|Team")
+	void SetTeamRole(EWB_SoccerRole InRole, EWB_TeamSituation InSituation, APawn* InPressTarget);
+
+	/** Opponent this bot presses (given by the coordinator). None when it does not press. */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Team")
+	APawn* GetPressTarget() const { return PressTarget.Get(); }
+
+	/** Goal the bot's team defends. None when the level has no UWB_TeamGoalComponent for its team. */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI")
+	UWB_TeamGoalComponent* GetGoalToDefend() const;
 
 	/** Team of the possessed player (UWB_TeamLibrary::GetTeamOf: its PlayerState, else the copy in its UWB_PlayerHitComponent). -1: no team. */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
@@ -100,7 +129,11 @@ protected:
 	virtual void OnPossess(APawn* InPawn) override;
 	virtual void OnUnPossess() override;
 
-	/** Picks the intent of this frame. Default: Attack when holding something, ChaseCarrier / Support when another player has the ball, else SeekBall. */
+	/**
+	 * Picks the intent of this frame. Attack when holding something. With a team role: Press when the coordinator gave a press target,
+	 * Attacker = SeekBall / ChaseCarrier, Defender = Defend (Support when the team has the ball), Goalkeeper = GuardGoal (LastMan when the team has the ball).
+	 * Without a role (legacy): ChaseCarrier / Support when another player has the ball, else SeekBall.
+	 */
 	UFUNCTION(BlueprintNativeEvent, Category = "SoccerAI")
 	EWB_SoccerAIIntent ChooseIntent();
 
@@ -147,9 +180,28 @@ private:
 	bool bWarnedNoProfile = false;
 	float AimJitterYaw = 0.f;
 
+	/** Opponent to press, from the coordinator. */
+	TWeakObjectPtr<APawn> PressTarget;
+
 	void TickSeekBall(ACharacter* Me, float DeltaSeconds);
 	void TickChaseCarrier(ACharacter* Me, float DeltaSeconds);
 	void TickSupport(ACharacter* Me, float DeltaSeconds);
+	void TickPress(ACharacter* Me, float DeltaSeconds);
+	void TickDefend(ACharacter* Me, float DeltaSeconds);
+	void TickGuardGoal(ACharacter* Me, float DeltaSeconds);
+	void TickLastMan(ACharacter* Me, float DeltaSeconds);
+
+	/** Chases Target (predicted spot) and Dashes on it when EvaluateDash allows it; steps back when too close for the run-up. */
+	void ChaseAndDash(ACharacter* Me, APawn* Target);
+
+	/** True when the ball is past GoalkeeperAdvanceFieldShare of the way from the own goal to the opponent goal (enemy territory). */
+	bool IsBallInEnemyTerritory() const;
+
+	/** Where the defenders look: the opponent carrier, else the ball. False when there is neither. */
+	bool GetThreatLocation(FVector& OutLocation) const;
+
+	/** Moves to Spot; once there, turns toward LookAt. */
+	void HoldSpot(ACharacter* Me, const FVector& Spot, const FVector& LookAt, float DeltaSeconds);
 
 	/** Runs to the support spot ahead of Anchor (the carrier), toward the opponent goal. */
 	void MoveToSupportSpot(ACharacter* Me, const FVector& Anchor);

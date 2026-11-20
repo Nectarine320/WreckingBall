@@ -57,6 +57,22 @@ FVector UWB_TeamGoalComponent::GetFieldDirection() const
 	return Sum.GetSafeNormal2D();
 }
 
+UWB_TeamGoalComponent* UWB_TeamGoalComponent::FindGoalDefendedBy(const UObject* WorldContextObject, int32 TeamIndex)
+{
+	if (TeamIndex < 0)
+	{
+		return nullptr;
+	}
+	for (UWB_TeamGoalComponent* Goal : GetAllGoals(WorldContextObject))
+	{
+		if (Goal->DefendingTeamIndex == TeamIndex)
+		{
+			return Goal;
+		}
+	}
+	return nullptr;
+}
+
 UWB_TeamGoalComponent* UWB_TeamGoalComponent::FindGoalToAttack(const UObject* WorldContextObject, int32 AttackingTeamIndex, FVector FromLocation)
 {
 	UWB_TeamGoalComponent* Best = nullptr;
