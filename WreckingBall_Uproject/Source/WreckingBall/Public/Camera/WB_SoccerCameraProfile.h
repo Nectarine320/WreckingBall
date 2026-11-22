@@ -33,6 +33,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Framing", meta = (ClampMin = "5", ClampMax = "170", Units = "Degrees"))
 	float FieldOfView = 55.f;
 
+	/**
+	 * True: the image keeps AspectRatio on every screen, with black bars on the sides (wider screen) or top and bottom (taller screen),
+	 * so every player sees the same framing. The off-screen indicators stay inside the image. False: the image fills the window.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Framing")
+	bool bConstrainAspectRatio = false;
+
+	/** Width / height of the image when bConstrainAspectRatio is on. 1.7778 = 16:9. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Framing", meta = (ClampMin = "0.5", ClampMax = "4", EditCondition = "bConstrainAspectRatio"))
+	float AspectRatio = 16.f / 9.f;
+
 	/** True: the camera trails its target with a lag (on top of BallFollowSpeed). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Follow")
 	bool bEnableCameraLag = true;

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "Layout/Margin.h"
 #include "WB_OffscreenIndicatorProfile.generated.h"
 
 class UWB_OffscreenIndicatorItem_Base;
@@ -48,11 +49,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Indicator|Outline")
 	FLinearColor OutlineColor = FLinearColor::White;
 
-	/** Gap between the screen edge and the indicator, in UI units. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Indicator", meta = (ClampMin = "0"))
-	float EdgeMargin = 16.f;
+	/**
+	 * Gap between each edge of the play area and the indicators, in UI units (pixels at 1080p). The play area is the 16:9 image when the
+	 * camera constrains its aspect ratio (no indicator in the black bars), else the whole screen. Raise Top so the indicators stay clear of the score bar.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Indicator")
+	FMargin EdgeMargins = FMargin(16.f);
 
-	/** A character counts as off screen when its position is closer than this to the screen edge, in UI units (so a half-visible character already shows its indicator). */
+	/** A character counts as off screen when its position is closer than this to the play area edge, in UI units (so a half-visible character already shows its indicator). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Indicator", meta = (ClampMin = "0"))
 	float OffscreenThreshold = 24.f;
 };

@@ -55,8 +55,14 @@ private:
 	bool bIndicatorsEnabled = true;
 	bool bWarnedNoProfile = false;
 
-	/** Places Items[Index] at the screen edge toward Pawn, or hides it when Pawn is on screen. */
-	void UpdateItem(int32 Index, const APawn* Pawn, const FVector2D& ScreenSize, float ViewportScale);
+	/**
+	 * Play area of the owning player, in UI units (canvas space): the image the camera draws, without the black bars when it constrains its
+	 * aspect ratio. False when there is no viewport yet.
+	 */
+	bool GetPlayArea(float ViewportScale, FVector2D& OutMin, FVector2D& OutMax) const;
+
+	/** Places Items[Index] at the play area edge toward Pawn, or hides it when Pawn is inside the play area. */
+	void UpdateItem(int32 Index, const APawn* Pawn, const FVector2D& AreaMin, const FVector2D& AreaMax, float ViewportScale);
 
 	void HideItem(int32 Index);
 };

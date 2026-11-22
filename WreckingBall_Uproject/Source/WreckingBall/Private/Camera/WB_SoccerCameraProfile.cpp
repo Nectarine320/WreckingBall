@@ -27,6 +27,8 @@ bool UWB_SoccerCameraProfile::ApplyCameraProfile(const UWB_SoccerCameraProfile* 
 	if (Camera)
 	{
 		Camera->SetFieldOfView(Profile->FieldOfView);
+		Camera->SetConstraintAspectRatio(Profile->bConstrainAspectRatio);
+		Camera->SetAspectRatio(Profile->AspectRatio);
 	}
 	return true;
 }
@@ -68,9 +70,9 @@ FVector UWB_SoccerCameraProfile::ComputeCameraTarget(const AActor* Ball, const U
 	const float SideAmount = FVector::DotProduct(OutCarrierDirection, ScreenRight);
 	const float UpAmount = FVector::DotProduct(OutCarrierDirection, ScreenUp);
 
-	// Viewport aspect (width / height). 16:9 before the viewport exists. Technical value.
-	float Aspect = 16.f / 9.f;
-	if (GEngine && GEngine->GameViewport)
+	// Image aspect (width / height): the constrained one, else the viewport's (16:9 before the viewport exists, technical value).
+	float Aspect = bConstrainAspectRatio ? AspectRatio : 16.f / 9.f;
+	if (!bConstrainAspectRatio && GEngine && GEngine->GameViewport)
 	{
 		FVector2D Size;
 		GEngine->GameViewport->GetViewportSize(Size);

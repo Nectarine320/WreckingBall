@@ -1,5 +1,6 @@
 #include "AI/WB_SoccerAIController_Base.h"
 
+#include "Debug/WB_DebugTextSubsystem.h"
 #include "AI/WB_SoccerAIProfile.h"
 #include "AI/Team/WB_TeamCoordinatorComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -1360,12 +1361,12 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 			DrawDebugCircle(World, Me->GetActorLocation(), Commands->GetDashDistance(), 32, FColor::Magenta, false, -1.f, 0, 1.f, FVector::ForwardVector, FVector::RightVector, false);
 		}
 	}
-	DrawDebugString(World, Me->GetActorLocation() + FVector(0.f, 0.f, 140.f), Text, nullptr, FColor::Orange, 0.f, true);
+	UWB_DebugTextSubsystem::DrawDebugText(World, Me->GetActorLocation() + FVector(0.f, 0.f, 140.f), Text, nullptr, FColor::Orange, 0.f, true);
 
 	if (const AActor* Wall = BreachWall.Get())
 	{
 		DrawDebugLine(World, Me->GetActorLocation(), BreachPoint, FColor::Red, false, -1.f, 0, 3.f);
-		DrawDebugString(World, BreachPoint + FVector(0.f, 0.f, 60.f), FString::Printf(TEXT("Breach %s"), *Wall->GetName()), nullptr, FColor::Red, 0.f, true);
+		UWB_DebugTextSubsystem::DrawDebugText(World, BreachPoint + FVector(0.f, 0.f, 60.f), FString::Printf(TEXT("Breach %s"), *Wall->GetName()), nullptr, FColor::Red, 0.f, true);
 	}
 
 	if (CurrentRole == EWB_SoccerRole::Goalkeeper)

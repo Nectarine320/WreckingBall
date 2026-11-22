@@ -1,5 +1,6 @@
 #include "AI/Team/WB_TeamCoordinatorComponent.h"
 
+#include "Debug/WB_DebugTextSubsystem.h"
 #include "AI/WB_SoccerAIController_Base.h"
 #include "AI/WB_SoccerAIProfile.h"
 #include "Ball/WB_BallPossessionSubsystem.h"
@@ -438,7 +439,7 @@ void UWB_TeamCoordinatorComponent::DrawDebug() const
 		{
 			Text += TEXT(" (H)");
 		}
-		DrawDebugString(GetWorld(), FVector(0.f, 0.f, 170.f), Text, Entry.Member, Color, Duration, true, 1.2f);
+		UWB_DebugTextSubsystem::DrawDebugText(this, FVector(0.f, 0.f, 170.f), Text, Entry.Member, Color, Duration, true, 1.2f);
 		if (Entry.PressTarget)
 		{
 			DrawDebugLine(GetWorld(), Entry.Member->GetActorLocation(), Entry.PressTarget->GetActorLocation(), Color, false, Duration, 0, 2.f);
@@ -449,7 +450,7 @@ void UWB_TeamCoordinatorComponent::DrawDebug() const
 		const FString Header = FString::Printf(TEXT("Team %d: %s"), TeamIndex, Situation == EWB_TeamSituation::Attacking ? TEXT("Attacking") : TEXT("Defending"));
 		if (const UWB_TeamGoalComponent* OwnGoal = UWB_TeamGoalComponent::FindGoalDefendedBy(this, TeamIndex))
 		{
-			DrawDebugString(GetWorld(), OwnGoal->GetAimLocation() + FVector(0.f, 0.f, 250.f), Header, nullptr, Color, Duration, true, 1.2f);
+			UWB_DebugTextSubsystem::DrawDebugText(this, OwnGoal->GetAimLocation() + FVector(0.f, 0.f, 250.f), Header, nullptr, Color, Duration, true, 1.2f);
 		}
 	}
 #endif

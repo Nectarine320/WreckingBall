@@ -1,5 +1,6 @@
 #include "Player/State/WB_PlayerStateComponent.h"
 
+#include "Debug/WB_DebugTextSubsystem.h"
 #include "Ball/WB_BallPossessionSubsystem.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
@@ -482,7 +483,7 @@ void UWB_PlayerStateComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 			Text += TEXT(" | Invulnerable");
 			Color = FColor::Cyan;
 		}
-		DrawDebugString(GetWorld(), Owner->GetActorLocation() + FVector(0.f, 0.f, DebugTextHeight), Text,
+		UWB_DebugTextSubsystem::DrawDebugText(this, Owner->GetActorLocation() + FVector(0.f, 0.f, DebugTextHeight), Text,
 			nullptr, Color, 0.f, true, 1.2f);
 	}
 #endif

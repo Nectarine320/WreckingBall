@@ -4,6 +4,9 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Engine/GameInstance.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/LocalPlayer.h"
+#include "SceneView.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
@@ -102,51 +105,91 @@ void UWB_OffscreenIndicatorWidget_Base::NativeTick(const FGeometry& MyGeometry, 
 	}
 
 	const float ViewportScale = FMath::Max(UWidgetLayoutLibrary::GetViewportScale(this), KINDA_SMALL_NUMBER);
-	const FVector2D ScreenSize = UWidgetLayoutLibrary::GetViewportSize(this) / ViewportScale;
+	FVector2D AreaMin;
+	FVector2D AreaMax;
+	const bool bHasArea = GetPlayArea(ViewportScale, AreaMin, AreaMax);
 	for (int32 i = 0; i < Items.Num(); ++i)
 	{
-		UpdateItem(i, Characters.IsValidIndex(i) ? Characters[i] : nullptr, ScreenSize, ViewportScale);
+		UpdateItem(i, bHasArea && Characters.IsValidIndex(i) ? Characters[i] : nullptr, AreaMin, AreaMax, ViewportScale);
 	}
 }
 
-void UWB_OffscreenIndicatorWidget_Base::UpdateItem(int32 Index, const APawn* Pawn, const FVector2D& ScreenSize, float ViewportScale)
+bool UWB_OffscreenIndicatorWidget_Base::GetPlayArea(float ViewportScale, FVector2D& OutMin, FVector2D& OutMax) const
+{
+	// The rectangle the engine renders the view in (constrained to the camera aspect ratio, black bars excluded), in viewport pixels.
+	const APlayerController* PlayerController = GetOwningPlayer();
+	const ULocalPlayer* LocalPlayer = PlayerController ? PlayerController->GetLocalPlayer() : nullptr;
+	FSceneViewProjectionData ProjectionData;
+	if (LocalPlayer && LocalPlayer->ViewportClient && LocalPlayer->ViewportClient->Viewport
+		&& LocalPlayer->GetProjectionData(LocalPlayer->ViewportClient->Viewport, ProjectionData))
+	{
+		const FIntRect Rect = ProjectionData.GetConstrainedViewRect();
+		if (Rect.Width() > 0 && Rect.Height() > 0)
+		{
+			OutMin = FVector2D(Rect.Min) / ViewportScale;
+			OutMax = FVector2D(Rect.Max) / ViewportScale;
+			return true;
+		}
+	}
+
+	// No projection data yet: the whole viewport.
+	const FVector2D ViewportSize = UWidgetLayoutLibrary::GetViewportSize(this) / ViewportScale;
+	OutMin = FVector2D::ZeroVector;
+	OutMax = ViewportSize;
+	return ViewportSize.X > 0.f && ViewportSize.Y > 0.f;
+}
+
+void UWB_OffscreenIndicatorWidget_Base::UpdateItem(int32 Index, const APawn* Pawn, const FVector2D& AreaMin, const FVector2D& AreaMax, float ViewportScale)
 {
 	APlayerController* ViewController = GetOwningPlayer();
-	if (!Pawn || !ViewController || ScreenSize.X <= 0.f || ScreenSize.Y <= 0.f)
+	if (!Pawn || !ViewController)
 	{
 		HideItem(Index);
 		return;
 	}
 
+	// Projected position, in the same space as the play area (whole viewport, UI units).
 	FVector2D Screen;
 	const bool bInFront = UGameplayStatics::ProjectWorldToScreen(ViewController, Pawn->GetActorLocation(), Screen, false);
 	Screen /= ViewportScale;
 
 	const float Threshold = Profile->OffscreenThreshold;
-	const bool bOffscreen = !bInFront || Screen.X < Threshold || Screen.Y < Threshold || Screen.X > ScreenSize.X - Threshold || Screen.Y > ScreenSize.Y - Threshold;
+	const bool bOffscreen = !bInFront || Screen.X < AreaMin.X + Threshold || Screen.Y < AreaMin.Y + Threshold
+		|| Screen.X > AreaMax.X - Threshold || Screen.Y > AreaMax.Y - Threshold;
 	if (!bOffscreen)
 	{
 		HideItem(Index);
 		return;
 	}
 
-	// Distance past the screen edge (as if the screen went on): sets the size, from SizeAtEdge just outside to SizeFar at FarDistance.
-	const float PastX = FMath::Max3(0.f, static_cast<float>(-Screen.X), static_cast<float>(Screen.X - ScreenSize.X));
-	const float PastY = FMath::Max3(0.f, static_cast<float>(-Screen.Y), static_cast<float>(Screen.Y - ScreenSize.Y));
+	// Distance past the play area edge (as if the image went on): sets the size, from SizeAtEdge just outside to SizeFar at FarDistance.
+	const float PastX = FMath::Max3(0.f, static_cast<float>(AreaMin.X - Screen.X), static_cast<float>(Screen.X - AreaMax.X));
+	const float PastY = FMath::Max3(0.f, static_cast<float>(AreaMin.Y - Screen.Y), static_cast<float>(Screen.Y - AreaMax.Y));
 	const float Alpha = bInFront ? FMath::Clamp(FMath::Sqrt(PastX * PastX + PastY * PastY) / FMath::Max(Profile->FarDistance, 1.f), 0.f, 1.f) : 1.f;
 	const float Size = FMath::Lerp(Profile->SizeAtEdge, Profile->SizeFar, Alpha);
 
-	// From the screen center toward the character, stopped on a rectangle inset by the margin and half the indicator.
-	const FVector2D Center = ScreenSize * 0.5f;
+	// Rectangle the indicator center may use: the play area inset by each edge margin and half the indicator.
+	const FMargin& Margins = Profile->EdgeMargins;
+	const float HalfSize = Size * 0.5f;
+	const FVector2D InnerMin(AreaMin.X + Margins.Left + HalfSize, AreaMin.Y + Margins.Top + HalfSize);
+	FVector2D InnerMax(AreaMax.X - Margins.Right - HalfSize, AreaMax.Y - Margins.Bottom - HalfSize);
+	// Margins larger than the area: collapse to its middle (division guard).
+	InnerMax = FVector2D(FMath::Max(InnerMax.X, InnerMin.X), FMath::Max(InnerMax.Y, InnerMin.Y));
+
+	// From the play area center toward the character, stopped on the inner rectangle. With unequal margins the rectangle is off center,
+	// so the ray is clipped against each side separately.
+	const FVector2D Center = (AreaMin + AreaMax) * 0.5f;
 	FVector2D Direction = (Screen - Center) * (bInFront ? 1.f : -1.f);
 	if (Direction.IsNearlyZero())
 	{
 		Direction = FVector2D(0.f, 1.f);
 	}
-	const FVector2D Half = Center - FVector2D(Profile->EdgeMargin + Size * 0.5f);
-	const float ScaleX = FMath::Abs(Direction.X) > KINDA_SMALL_NUMBER ? Half.X / FMath::Abs(Direction.X) : TNumericLimits<float>::Max();
-	const float ScaleY = FMath::Abs(Direction.Y) > KINDA_SMALL_NUMBER ? Half.Y / FMath::Abs(Direction.Y) : TNumericLimits<float>::Max();
-	const FVector2D Position = Center + Direction * FMath::Min(ScaleX, ScaleY);
+	const FVector2D Origin(FMath::Clamp(Center.X, InnerMin.X, InnerMax.X), FMath::Clamp(Center.Y, InnerMin.Y, InnerMax.Y));
+	const float ScaleX = Direction.X > KINDA_SMALL_NUMBER ? (InnerMax.X - Origin.X) / Direction.X
+		: Direction.X < -KINDA_SMALL_NUMBER ? (InnerMin.X - Origin.X) / Direction.X : TNumericLimits<float>::Max();
+	const float ScaleY = Direction.Y > KINDA_SMALL_NUMBER ? (InnerMax.Y - Origin.Y) / Direction.Y
+		: Direction.Y < -KINDA_SMALL_NUMBER ? (InnerMin.Y - Origin.Y) / Direction.Y : TNumericLimits<float>::Max();
+	const FVector2D Position = Origin + Direction * FMath::Min(ScaleX, ScaleY);
 
 	UWB_OffscreenIndicatorItem_Base* Item = Items[Index];
 	if (UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Item->Slot))
