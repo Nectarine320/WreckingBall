@@ -590,7 +590,7 @@ bool AWB_SoccerAIController_Base::TryDashOn(ACharacter* Me, APawn* Target)
 	Commands->StopMoving();
 	const FVector AimLocation = Profile->bDashAimAtTargetLocation ? Target->GetActorLocation() : AimPoint;
 	Commands->SetFacingDirection((AimLocation - Me->GetActorLocation()).GetSafeNormal2D().RotateAngleAxis(Jitter, FVector::UpVector));
-	Commands->Dash();
+	Commands->DashWithCharge(Profile->BotDashCharge);
 	return true;
 }
 
@@ -619,8 +619,9 @@ bool AWB_SoccerAIController_Base::EvaluateDash(APawn* Target, FVector& AimPoint)
 	const FVector MyLocation = Me->GetActorLocation();
 
 	// Lead the target first: the chase uses the predicted spot even when no Dash is possible.
-	const float DashDistance = Commands->GetDashDistance();
-	const float DashSpeed = DashDistance / Commands->GetDashDuration();
+	// Reach and speed of the bot's Dash on a player, at its charge (BotDashCharge).
+	const float DashDistance = Commands->GetDashDistanceForCharge(Profile->BotDashCharge);
+	const float DashSpeed = DashDistance / FMath::Max(Commands->GetDashDurationForCharge(Profile->BotDashCharge), UE_KINDA_SMALL_NUMBER);
 	const ACharacter* TargetCharacter = Cast<ACharacter>(Target);
 	const float Radii = Me->GetCapsuleComponent()->GetScaledCapsuleRadius()
 		+ (TargetCharacter ? TargetCharacter->GetCapsuleComponent()->GetScaledCapsuleRadius() : 0.f);
@@ -1376,7 +1377,7 @@ void AWB_SoccerAIController_Base::TickBreach(ACharacter* Me)
 	const FVector ToWall = (BreachPoint - Me->GetActorLocation()) * FVector(1.f, 1.f, 0.f);
 	const FVector Direction = ToWall.GetSafeNormal();
 	const float Distance = static_cast<float>(ToWall.Size()) - Me->GetCapsuleComponent()->GetScaledCapsuleRadius();
-	const float Reach = Commands->GetDashDistance() * Profile->DashReachRatio;
+	const float Reach = Commands->GetDashDistanceForCharge(Profile->BotBreachDashCharge) * Profile->DashReachRatio;
 	const float MinRunUp = Commands->GetDashMinRunUp() + Profile->DashRunUpMargin;
 
 	// Run-up: far enough for the Dash to hurt the wall, close enough for it to reach.
@@ -1395,7 +1396,7 @@ void AWB_SoccerAIController_Base::TickBreach(ACharacter* Me)
 	if (CanDashNow())
 	{
 		NextBreachDashTime = Now + Profile->BreachDashCooldown;
-		Commands->Dash();
+		Commands->DashWithCharge(Profile->BotBreachDashCharge);
 	}
 }
 
@@ -1464,7 +1465,7 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 		DrawDebugLine(World, Me->GetActorLocation(), LastDashAimPoint, FColor::Magenta, false, -1.f, 0, 1.f);
 		if (Commands)
 		{
-			DrawDebugCircle(World, Me->GetActorLocation(), Commands->GetDashDistance(), 32, FColor::Magenta, false, -1.f, 0, 1.f, FVector::ForwardVector, FVector::RightVector, false);
+			DrawDebugCircle(World, Me->GetActorLocation(), Commands->GetDashDistanceForCharge(GetActiveProfile()->BotDashCharge), 32, FColor::Magenta, false, -1.f, 0, 1.f, FVector::ForwardVector, FVector::RightVector, false);
 		}
 	}
 	UWB_DebugTextSubsystem::DrawDebugText(World, Me->GetActorLocation() + FVector(0.f, 0.f, 140.f), Text, nullptr, FColor::Orange, 0.f, true);

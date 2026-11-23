@@ -116,6 +116,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", Units = "Seconds"))
 	float DashCooldown = 2.5f;
 
+	/** Charge (0..1) of the bot's Dash on a player (charged Dash, DA_PlayerDash_Default). The bot Dashes at once, without holding. 1: full Dash. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", ClampMax = "1"))
+	float BotDashCharge = 1.f;
+
+	/** Charge (0..1) of the bot's Dash into a wall it breaks through (bAllowBreach). 1: full Dash. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", ClampMax = "1"))
+	float BotBreachDashCharge = 1.f;
+
 	/** Seconds between two Dashes of the bot into a wall it breaks through (bAllowBreach). Separate from DashCooldown. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", Units = "Seconds"))
 	float BreachDashCooldown = 2.5f;

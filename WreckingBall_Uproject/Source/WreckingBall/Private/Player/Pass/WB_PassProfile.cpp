@@ -1,5 +1,6 @@
 #include "Player/Pass/WB_PassProfile.h"
 
+#include "Player/Charge/WB_ChargeLibrary.h"
 #include "GameFramework/Actor.h"
 #include "UObject/UnrealType.h"
 
@@ -68,13 +69,7 @@ bool UWB_PassProfile::ComputeFreePassVelocity(FVector Direction, float MaxKickSp
 
 float UWB_PassProfile::GetChargeFromHoldTime(float HoldTime) const
 {
-	if (!bUseChargedPass || HoldTime < ChargeMinHoldTime)
-	{
-		return 0.f;
-	}
-	const float Range = PassChargeTime - ChargeMinHoldTime;
-	// Range at or under zero: any hold past the minimum is a full charge.
-	return Range > UE_KINDA_SMALL_NUMBER ? FMath::Clamp((HoldTime - ChargeMinHoldTime) / Range, 0.f, 1.f) : 1.f;
+	return bUseChargedPass ? UWB_ChargeLibrary::GetChargeFromHoldTime(HoldTime, ChargeMinHoldTime, PassChargeTime) : 0.f;
 }
 
 float UWB_PassProfile::GetChargeSpeedMultiplier(float Charge) const

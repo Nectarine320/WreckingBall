@@ -12,13 +12,16 @@
 #include "Player/Energy/WB_PlayerEnergyProfile.h"
 #include "Player/State/WB_PlayerStateComponent.h"
 #include "Player/State/WB_PlayerStateTags.h"
+#include "UI/GroundRing/WB_GroundRingComponent.h"
 #include "UObject/UnrealType.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWBPlayerCommand, Log, All);
 
 UWB_PlayerCommandComponent::UWB_PlayerCommandComponent()
 {
-	PrimaryComponentTick.bCanEverTick = false;
+	// Ticks only while a pass or a Dash charges (ground ring, cancels).
+	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void UWB_PlayerCommandComponent::MoveInWorldDirection(FVector WorldDirection, float Scale)
@@ -49,7 +52,126 @@ void UWB_PlayerCommandComponent::StopMoving()
 
 void UWB_PlayerCommandComponent::Dash()
 {
+	DashWithCharge(1.f);
+}
+
+void UWB_PlayerCommandComponent::DashWithCharge(float Charge)
+{
+	ActiveDashCharge = FMath::Clamp(Charge, 0.f, 1.f);
 	OnDashCommand.Broadcast();
+}
+
+bool UWB_PlayerCommandComponent::CanStartDash() const
+{
+	const AActor* Owner = GetOwner();
+	const UWB_PlayerStateComponent* State = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	return State && State->CanEnterState(WBTags::Player_State_Dashing) && !IsExhausted();
+}
+
+void UWB_PlayerCommandComponent::PressDash()
+{
+	const UWB_PlayerDashProfile* Profile = GetDashProfile();
+	if (!Profile || !Profile->bUseChargedDash)
+	{
+		Dash();
+		return;
+	}
+	if (!CanStartDash())
+	{
+		return;
+	}
+	bChargingDash = true;
+	DashChargeStartTime = GetWorld()->GetTimeSeconds();
+	StartChargeTick();
+}
+
+void UWB_PlayerCommandComponent::ReleaseDash()
+{
+	if (!bChargingDash)
+	{
+		return;
+	}
+	const float Charge = GetDashCharge();
+	bChargingDash = false;
+	SetChargeRing(0.f);
+	// RequestDash (Blueprint) consumes the same DashEnergyCost whatever the charge.
+	DashWithCharge(Charge);
+}
+
+float UWB_PlayerCommandComponent::GetDashCharge() const
+{
+	const UWB_PlayerDashProfile* Profile = DashProfile.Get();
+	if (!bChargingDash || !Profile || !GetWorld())
+	{
+		return 0.f;
+	}
+	return Profile->GetChargeFromHoldTime(static_cast<float>(GetWorld()->GetTimeSeconds() - DashChargeStartTime));
+}
+
+float UWB_PlayerCommandComponent::GetActiveDashDistance() const
+{
+	return GetDashDistanceForCharge(ActiveDashCharge);
+}
+
+float UWB_PlayerCommandComponent::GetActiveDashDuration() const
+{
+	return GetDashDurationForCharge(ActiveDashCharge);
+}
+
+float UWB_PlayerCommandComponent::GetActiveDashSpeed() const
+{
+	const float Duration = GetActiveDashDuration();
+	return Duration > UE_KINDA_SMALL_NUMBER ? GetActiveDashDistance() / Duration : 0.f;
+}
+
+float UWB_PlayerCommandComponent::ResolveDashImpactDamage(bool bIsDashImpact, AActor* Source, FVector ImpactVelocity, float CurveDamage)
+{
+	const UWB_PlayerCommandComponent* Commands = bIsDashImpact && Source ? Source->FindComponentByClass<UWB_PlayerCommandComponent>() : nullptr;
+	const UWB_PlayerDashProfile* Profile = Commands ? Commands->DashProfile.Get() : nullptr;
+	if (!Profile || !Profile->bUseChargedDashDamage)
+	{
+		return CurveDamage;
+	}
+	// The impact velocity is the Dash speed x the angle factor (ComputeDashImpactVelocity): its ratio gives the angle factor back.
+	const float Speed = Commands->GetActiveDashSpeed();
+	const float AngleFactor = Speed > UE_KINDA_SMALL_NUMBER ? FMath::Clamp(ImpactVelocity.Size() / Speed, 0.f, 1.f) : 1.f;
+	return Profile->GetDamageForCharge(Commands->GetActiveDashCharge()) * AngleFactor;
+}
+
+void UWB_PlayerCommandComponent::StartChargeTick()
+{
+	SetComponentTickEnabled(true);
+}
+
+void UWB_PlayerCommandComponent::SetChargeRing(float Percent) const
+{
+	AActor* Owner = GetOwner();
+	if (UWB_GroundRingComponent* Ring = Owner ? Owner->FindComponentByClass<UWB_GroundRingComponent>() : nullptr)
+	{
+		Ring->SetKickPercent(Percent);
+	}
+}
+
+void UWB_PlayerCommandComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	// A hit, a state change or the loss of the ball cancels the charge.
+	if (bChargingPass && !CanPassNow())
+	{
+		bChargingPass = false;
+	}
+	if (bChargingDash && !CanStartDash())
+	{
+		bChargingDash = false;
+	}
+	if (!bChargingPass && !bChargingDash)
+	{
+		SetChargeRing(0.f);
+		SetComponentTickEnabled(false);
+		return;
+	}
+	SetChargeRing(bChargingDash ? GetDashCharge() : GetPassCharge());
 }
 
 void UWB_PlayerCommandComponent::Grab()
@@ -149,6 +271,7 @@ bool UWB_PlayerCommandComponent::BeginPassCharge()
 	}
 	bChargingPass = true;
 	PassChargeStartTime = GetWorld()->GetTimeSeconds();
+	StartChargeTick();
 	return true;
 }
 
@@ -345,16 +468,16 @@ const UWB_PlayerDashProfile* UWB_PlayerCommandComponent::GetDashProfile() const
 	return DashProfile.Get();
 }
 
-float UWB_PlayerCommandComponent::GetDashDistance() const
+float UWB_PlayerCommandComponent::GetDashDistanceForCharge(float Charge) const
 {
 	const UWB_PlayerDashProfile* Profile = GetDashProfile();
-	return Profile ? Profile->DashDistance : 0.f;
+	return Profile ? Profile->GetDistanceForCharge(Charge) : 0.f;
 }
 
-float UWB_PlayerCommandComponent::GetDashDuration() const
+float UWB_PlayerCommandComponent::GetDashDurationForCharge(float Charge) const
 {
 	const UWB_PlayerDashProfile* Profile = GetDashProfile();
-	return Profile ? Profile->DashDuration : 0.f;
+	return Profile ? Profile->GetDurationForCharge(Charge) : 0.f;
 }
 
 float UWB_PlayerCommandComponent::GetDashMinRunUp() const

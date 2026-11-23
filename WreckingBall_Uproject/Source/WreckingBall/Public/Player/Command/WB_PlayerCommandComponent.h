@@ -106,9 +106,56 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
 	void StopMoving();
 
-	/** Fires OnDashCommand. */
+	/** Fires OnDashCommand, as a full Dash (active Dash charge 1). */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
 	void Dash();
+
+	/** Dashes at Charge (0..1, DashProfile->bUseChargedDash): sets the active Dash charge, then fires OnDashCommand. Used by the bots. */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Dash")
+	void DashWithCharge(float Charge);
+
+	/**
+	 * Dash button press. DashProfile->bUseChargedDash on: starts the Dash charge when the owner may Dash (Free, not exhausted); the player keeps
+	 * moving, the ground ring shows the charge. Off: Dashes at once (Dash).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Dash")
+	void PressDash();
+
+	/** Dash button release: sends the charged Dash at the charge held (OnDashCommand). Same energy cost whatever the charge. Does nothing when no Dash is charging. */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Dash")
+	void ReleaseDash();
+
+	/** True between PressDash and ReleaseDash (or the cancel: hit, state change, exhaustion). */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Dash")
+	bool IsChargingDash() const { return bChargingDash; }
+
+	/** Charge (0..1) of the Dash being charged, from the hold time. 0 when not charging. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Dash")
+	float GetDashCharge() const;
+
+	/** Charge (0..1) of the current (or last) Dash, set when it left. 1 for a Dash that was not charged. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Dash")
+	float GetActiveDashCharge() const { return ActiveDashCharge; }
+
+	/** Distance in cm of the current Dash (DashProfile at the active Dash charge). Read by the Dash and DashAnim events. 0 without a profile. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Dash")
+	float GetActiveDashDistance() const;
+
+	/** Duration in seconds of the current Dash (DashProfile at the active Dash charge). Read by DashAnim. 0 without a profile. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Dash")
+	float GetActiveDashDuration() const;
+
+	/** Speed in cm/s of the current Dash (active distance / active duration). Read by ComputeDashImpactVelocity. 0 without a profile. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Dash")
+	float GetActiveDashSpeed() const;
+
+	/**
+	 * Damage of a Dash impact on a destructible. When bIsDashImpact and Source is a player whose DashProfile->bUseChargedDashDamage is on:
+	 * GetDamageForCharge(active Dash charge) x the angle factor (ImpactVelocity length / active Dash speed). Otherwise CurveDamage, unchanged.
+	 * Called by BP_Destructible_Base::ApplyImpact between ComputeImpactDamage and the damage.
+	 */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Dash")
+	static float ResolveDashImpactDamage(bool bIsDashImpact, AActor* Source, FVector ImpactVelocity, float CurveDamage);
 
 	/** Fires OnGrabCommand. */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
@@ -168,13 +215,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
 	float GetDashEnergyCost() const;
 
-	/** Distance in cm of a full Dash (DashProfile). 0 when the profile is missing. */
+	/** Distance in cm of a Dash at Charge (0..1, DashProfile). 0 when the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
-	float GetDashDistance() const;
+	float GetDashDistanceForCharge(float Charge) const;
 
-	/** Duration in seconds of a full Dash (DashProfile). 0 when the profile is missing. */
+	/** Duration in seconds of a Dash at Charge (0..1, DashProfile). 0 when the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
-	float GetDashDuration() const;
+	float GetDashDurationForCharge(float Charge) const;
+
+	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	/** Minimum run-up in cm for a Dash to knock a player Down (DashProfile). 0 when the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Readout")
@@ -201,6 +250,22 @@ private:
 	/** Pass charge in progress (BeginPassCharge) and its start time. */
 	bool bChargingPass = false;
 	double PassChargeStartTime = 0.0;
+
+	/** Dash charge in progress (PressDash) and its start time. */
+	bool bChargingDash = false;
+	double DashChargeStartTime = 0.0;
+
+	/** Charge of the current (or last) Dash. */
+	float ActiveDashCharge = 1.f;
+
+	/** True when a Dash may start now: Free, the state table allows Dashing, not exhausted (same refusals as RequestDash). */
+	bool CanStartDash() const;
+
+	/** Turns the tick on while a pass or a Dash charges (ground ring and cancels). */
+	void StartChargeTick();
+
+	/** Shows Percent (0..1) on the owner's ground ring (UWB_GroundRingComponent::SetKickPercent, the kick ring). */
+	void SetChargeRing(float Percent) const;
 
 	/** Missing PassProfile already reported. */
 	mutable bool bWarnedNoPassProfile = false;
