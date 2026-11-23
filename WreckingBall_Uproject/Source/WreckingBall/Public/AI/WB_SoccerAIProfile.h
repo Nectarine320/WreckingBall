@@ -54,6 +54,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Ball", meta = (ClampMin = "0"))
 	float GrabRange = 130.f;
 
+	// ---- Pass reception ----
+
+	/**
+	 * On: a bot a teammate passes the ball to takes the intent ReceivePass: it runs to the first point of the ball's path it reaches in time,
+	 * faces the ball and walks into it. Ends when anyone takes the ball (an opponent may intercept) or after ReceivePassMaxTime.
+	 * Off (default): the bot keeps its role while the pass travels.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Receive")
+	bool bReceivePasses = false;
+
+	/** Seconds after the pass during which the receiver keeps ReceivePass. After that, it plays its role again. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Receive", meta = (ClampMin = "0", Units = "Seconds", EditCondition = "bReceivePasses"))
+	float ReceivePassMaxTime = 3.f;
+
+	/** Seconds of margin: the bot aims for the first point of the ball's path it reaches this much before the ball. Higher: it comes earlier and waits. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Receive", meta = (ClampMin = "0", Units = "Seconds", EditCondition = "bReceivePasses"))
+	float ReceivePassMargin = 0.2f;
+
 	// ---- Dash ----
 
 	/**
@@ -387,6 +405,10 @@ public:
 	/** Intent SupportOpen (team roles, Defender in an open spot near the carrier). Off: the bot stays Idle instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
 	bool bAllowSupportOpen = true;
+
+	/** Intent ReceivePass (run to the path of a pass meant for the bot, when bReceivePasses is on). Off: the receiver keeps the intent of its role. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowReceivePass = true;
 
 	/** Action Dash (on a player, and the wall breach). Off: the bot never Dashes; ChaseCarrier and Press only follow the target. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Actions", meta = (EditCondition = "bUseFeatureFilter"))

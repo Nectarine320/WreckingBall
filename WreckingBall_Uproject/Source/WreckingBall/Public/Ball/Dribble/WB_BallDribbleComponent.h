@@ -15,7 +15,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnDribbleLost, AActor*, Ball);
  * Dribbles the possessed ball on the ground (dribble devis 2026-11-19): replaces the Physics Handle for balls.
  * The ball stays fully simulated (gravity, floor, bounces, collisions). Each frame, before physics, a flat push (X and Y only) drives it toward a point
  * just in front of the feet, around the capsule on sharp turns, and its spin follows the roll. Too far from that point (LoseDistance for LoseDelay)
- * or too high (LoseHeight): the possession is lost and OnDribbleLost fires. Options of the profile, off by default: elastic tether, ball touches.
+ * or too high (LoseHeight): the possession is lost and OnDribbleLost fires. Options of the profile, off by default: elastic tether, ball touches,
+ * locked possession (bLockPossession: the ball velocity is set each frame, never lost by itself, put back at the feet when stuck).
  * BPC_GrabObject calls StartDribble on pickup and StopDribble before a kick or a drop. Stops by itself when the player no longer holds anything.
  * Records the dribbler in UWB_BallPossessionSubsystem, so IsBallHeld stays true while the ball is dribbled.
  */
@@ -99,6 +100,9 @@ private:
 
 	/** Flat point the ball heads to: Target, or a point beside the capsule when the straight way crosses it. */
 	FVector GetPathPoint(const FVector& BallCenter, const FVector& Target, const FVector& PlayerCenter, float KeepOutRadius, const FVector& Forward) const;
+
+	/** Locked possession: puts the ball back at the dribble point (swept from the player, so it never ends inside a wall), at the player's velocity. */
+	void PutBallAtFeet(UPrimitiveComponent* Body, const FVector& DribblePoint, const FVector& PlayerCenter, float FeetZ, float BallRadius, const FVector& PlayerFlatVelocity);
 
 	/** Stops and broadcasts OnDribbleLost. */
 	void LoseBall(const TCHAR* Reason = TEXT(""));

@@ -186,11 +186,53 @@ void UWB_BallPossessionSubsystem::SetBallDribbler(const UObject* WorldContextObj
 		const TWeakObjectPtr<AActor>* Previous = Self->Dribblers.Find(Ball);
 		AActor* OldPossessor = Previous ? Previous->Get() : nullptr;
 		Self->Dribblers.Add(Ball, Player);
+		// Someone took the ball (the receiver, or an interception): the pass is over.
+		Self->Passes.Remove(Ball);
 		if (OldPossessor != Player)
 		{
 			Self->OnBallPossessionChanged.Broadcast(Ball, Player, OldPossessor);
 		}
 	}
+}
+
+void UWB_BallPossessionSubsystem::MarkBallPassed(const UObject* WorldContextObject, AActor* Ball, AActor* Passer, APawn* Receiver)
+{
+	UWB_BallPossessionSubsystem* Self = Get(WorldContextObject);
+	if (!Self || !Ball || !Receiver)
+	{
+		return;
+	}
+	FWB_BallPassRecord& Record = Self->Passes.FindOrAdd(Ball);
+	Record.Receiver = Receiver;
+	Record.Passer = Passer;
+	Record.PassTime = Self->GetWorld()->GetTimeSeconds();
+}
+
+AActor* UWB_BallPossessionSubsystem::FindBallPassedTo(const UObject* WorldContextObject, const APawn* Receiver, float& OutPassAge)
+{
+	OutPassAge = 0.f;
+	const UWB_BallPossessionSubsystem* Self = Get(WorldContextObject);
+	if (!Self || !Receiver)
+	{
+		return nullptr;
+	}
+	for (const TPair<TWeakObjectPtr<AActor>, FWB_BallPassRecord>& Pair : Self->Passes)
+	{
+		AActor* Ball = Pair.Key.Get();
+		if (Ball && Pair.Value.Receiver.Get() == Receiver && !GetBallPossessor(WorldContextObject, Ball))
+		{
+			OutPassAge = static_cast<float>(Self->GetWorld()->GetTimeSeconds() - Pair.Value.PassTime);
+			return Ball;
+		}
+	}
+	return nullptr;
+}
+
+APawn* UWB_BallPossessionSubsystem::GetPassReceiver(const UObject* WorldContextObject, const AActor* Ball)
+{
+	const UWB_BallPossessionSubsystem* Self = Get(WorldContextObject);
+	const FWB_BallPassRecord* Record = Self ? Self->Passes.Find(Ball) : nullptr;
+	return Record && !GetBallPossessor(WorldContextObject, Ball) ? Record->Receiver.Get() : nullptr;
 }
 
 void UWB_BallPossessionSubsystem::ClearBallDribbler(const UObject* WorldContextObject, const AActor* Ball, const AActor* Player)
@@ -263,6 +305,13 @@ void UWB_BallPossessionSubsystem::Tick(float DeltaTime)
 	for (auto It = Dribblers.CreateIterator(); It; ++It)
 	{
 		if (!It.Key().IsValid() || !It.Value().IsValid())
+		{
+			It.RemoveCurrent();
+		}
+	}
+	for (auto It = Passes.CreateIterator(); It; ++It)
+	{
+		if (!It.Key().IsValid() || !It.Value().Receiver.IsValid())
 		{
 			It.RemoveCurrent();
 		}

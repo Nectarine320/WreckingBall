@@ -45,7 +45,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
 	FWB_OnPlayerCommand OnKickReleaseCommand;
 
-	/** Pass command: the Blueprint releases the dribbled ball and sets its velocity to BallVelocity (cm/s, flat), toward Receiver. Fired by RequestPass. */
+	/**
+	 * Pass command: the Blueprint releases the dribbled ball and sets its velocity to BallVelocity (cm/s, flat), toward Receiver.
+	 * Fired by RequestPass and RequestDirectionalPass. Receiver is None for a free pass (aim assist, no teammate in the cone).
+	 */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand|Pass")
 	FWB_OnPassCommand OnPassCommand;
 
@@ -59,6 +62,14 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
 	bool RequestPass(APawn* Receiver);
+
+	/**
+	 * Passes the dribbled ball in Direction (world, flat; zero: the owner's facing). PassProfile->bUseAimAssist on: to the teammate within
+	 * AimAssistAngle of Direction, else a free pass along Direction (OutReceiver None). Off: to the teammate best aligned with Direction.
+	 * Same refusals as RequestPass. Returns true when the ball left the owner.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
+	bool RequestDirectionalPass(FVector Direction, APawn*& OutReceiver);
 
 	/** Flat ball velocity (cm/s) of a pass from the dribbled ball to Receiver (PassProfile). False when the owner dribbles no ball or a setting is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Pass", meta = (ReturnDisplayName = "Valid"))
@@ -158,6 +169,15 @@ private:
 
 	/** Variables already reported as missing, so the warning is logged once. */
 	mutable TSet<FName> WarnedVariables;
+
+	/** True when a pass may start: the owner holds the ball and is Free. */
+	bool CanPassNow() const;
+
+	/** True when PassProfile is set (warns once otherwise). */
+	bool HasPassProfile() const;
+
+	/** Turns the owner toward Velocity, fires OnPassCommand and records the pass for the receiver (UWB_BallPossessionSubsystem::MarkBallPassed). */
+	bool FirePass(APawn* Receiver, const FVector& Velocity);
 
 	/** Missing PassProfile already reported. */
 	mutable bool bWarnedNoPassProfile = false;

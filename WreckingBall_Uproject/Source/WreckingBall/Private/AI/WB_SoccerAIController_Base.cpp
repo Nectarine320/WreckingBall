@@ -16,7 +16,10 @@
 #include "Match/WB_TeamLibrary.h"
 #include "NavigationData.h"
 #include "NavigationSystem.h"
+#include "Ball/WB_BallPossessionSubsystem.h"
+#include "Components/PrimitiveComponent.h"
 #include "Player/Command/WB_PlayerCommandComponent.h"
+#include "Player/Pass/WB_PassProfile.h"
 #include "Player/Dive/WB_PlayerDiveComponent.h"
 #include "Player/Hit/WB_PlayerHitComponent.h"
 #include "Player/State/WB_PlayerStateComponent.h"
@@ -66,7 +69,8 @@ bool AWB_SoccerAIController_Base::IsIntentAllowed(EWB_SoccerAIIntent Intent) con
 	case EWB_SoccerAIIntent::GuardGoal:    return Profile->bAllowGuardGoal;
 	case EWB_SoccerAIIntent::LastMan:      return Profile->bAllowLastMan;
 	case EWB_SoccerAIIntent::SupportOpen:  return Profile->bAllowSupportOpen;
-	default:                               return true;
+	case EWB_SoccerAIIntent::ReceivePass:  return Profile->bAllowReceivePass;
+	default:                             return true;
 	}
 }
 
@@ -224,6 +228,17 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 		return EWB_SoccerAIIntent::Attack;
 	}
 
+	// A pass meant for this bot comes first, whatever its role.
+	if (RefreshIncomingPass())
+	{
+		if (IsIntentAllowed(EWB_SoccerAIIntent::ReceivePass))
+		{
+			return EWB_SoccerAIIntent::ReceivePass;
+		}
+		// Debug filter: ReceivePass off, the receiver keeps the intent of its role.
+		FilteredIntent = EWB_SoccerAIIntent::ReceivePass;
+	}
+
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
 	if (Profile && Profile->bUseTeamRoles && CurrentRole != EWB_SoccerRole::None)
 	{
@@ -354,6 +369,7 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	case EWB_SoccerAIIntent::GuardGoal:    TickGuardGoal(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::LastMan:      TickLastMan(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::SupportOpen:  TickSupportOpen(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::ReceivePass:  TickReceivePass(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::Idle:         TickIdle(Me, DeltaSeconds); break;
 	default:                               Commands->StopMoving(); break;
 	}
@@ -432,6 +448,91 @@ void AWB_SoccerAIController_Base::TickSeekBall(ACharacter* Me, float DeltaSecond
 		return;
 	}
 	MoveTowardLocation(Me, Ball->GetActorLocation());
+}
+
+bool AWB_SoccerAIController_Base::RefreshIncomingPass()
+{
+	IncomingPassBall.Reset();
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (!Profile || !Profile->bReceivePasses)
+	{
+		return false;
+	}
+	float PassAge = 0.f;
+	AActor* Ball = UWB_BallPossessionSubsystem::FindBallPassedTo(this, GetPawn(), PassAge);
+	if (!Ball || PassAge > Profile->ReceivePassMaxTime)
+	{
+		return false;
+	}
+	IncomingPassBall = Ball;
+	return true;
+}
+
+FVector AWB_SoccerAIController_Base::GetPassInterceptPoint(const ACharacter* Me, const FVector& BallLocation, const FVector& BallVelocity) const
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	const FVector Flat(BallVelocity.X, BallVelocity.Y, 0.f);
+	const float Speed = Flat.Size();
+	// Under 1 cm/s the ball is still: go to it. Technical value.
+	if (Speed < 1.f)
+	{
+		return BallLocation;
+	}
+	const FVector Direction = Flat / Speed;
+	// Same slow-down as the pass computation (one place for the setting): DA_Pass_Default on the bot's pawn.
+	const UWB_PassProfile* PassProfile = Commands ? Commands->PassProfile.Get() : nullptr;
+	const float Deceleration = PassProfile ? PassProfile->RollingDeceleration : 0.f;
+	const float Horizon = Deceleration > 0.f ? FMath::Min(Speed / Deceleration, Profile->ReceivePassMaxTime) : Profile->ReceivePassMaxTime;
+
+	const UCharacterMovementComponent* Movement = Me->GetCharacterMovement();
+	const float MySpeed = Movement ? Movement->GetMaxSpeed() : 0.f;
+	const FVector MyLocation = Me->GetActorLocation();
+
+	auto PointAt = [&](float Time)
+	{
+		const float Travel = Speed * Time - 0.5f * Deceleration * Time * Time;
+		return BallLocation + Direction * Travel;
+	};
+
+	// Path sampled every 0.05 s. Technical value.
+	constexpr float Step = 0.05f;
+	if (MySpeed > 1.f)
+	{
+		for (float Time = 0.f; Time <= Horizon; Time += Step)
+		{
+			const FVector Point = PointAt(Time);
+			if (FVector::Dist2D(MyLocation, Point) / MySpeed + Profile->ReceivePassMargin <= Time)
+			{
+				return Point;
+			}
+		}
+	}
+	return PointAt(Horizon);
+}
+
+void AWB_SoccerAIController_Base::TickReceivePass(ACharacter* Me, float DeltaSeconds)
+{
+	const AActor* Ball = IncomingPassBall.Get();
+	if (!Ball)
+	{
+		Commands->StopMoving();
+		return;
+	}
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	const UPrimitiveComponent* Body = UWB_BallPossessionSubsystem::FindBallBody(Ball);
+	const FVector BallLocation = Body ? Body->Bounds.Origin : Ball->GetActorLocation();
+	const FVector BallVelocity = Body ? Body->GetComponentVelocity() : Ball->GetVelocity();
+
+	// Close: walk straight into the ball, the catch is automatic.
+	const FVector ToBall = BallLocation - Me->GetActorLocation();
+	if (ToBall.Size2D() <= Profile->GrabRange)
+	{
+		PassInterceptPoint = BallLocation;
+		Commands->MoveInWorldDirection(ToBall);
+		return;
+	}
+	PassInterceptPoint = GetPassInterceptPoint(Me, BallLocation, BallVelocity);
+	HoldSpot(Me, PassInterceptPoint, BallLocation, DeltaSeconds);
 }
 
 void AWB_SoccerAIController_Base::TickChaseCarrier(ACharacter* Me, float DeltaSeconds)
@@ -1362,6 +1463,12 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 		}
 	}
 	UWB_DebugTextSubsystem::DrawDebugText(World, Me->GetActorLocation() + FVector(0.f, 0.f, 140.f), Text, nullptr, FColor::Orange, 0.f, true);
+
+	if (CurrentIntent == EWB_SoccerAIIntent::ReceivePass)
+	{
+		DrawDebugSphere(World, PassInterceptPoint, 20.f, 8, FColor::Cyan, false, -1.f, 0, 1.5f);
+		DrawDebugLine(World, Me->GetActorLocation(), PassInterceptPoint, FColor::Cyan, false, -1.f, 0, 1.f);
+	}
 
 	if (const AActor* Wall = BreachWall.Get())
 	{

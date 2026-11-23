@@ -91,6 +91,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Loss", meta = (ClampMin = "0", Units = "Centimeters"))
 	float LoseHeight = 80.f;
 
+	// ---- Locked possession (option) ----
+
+	/**
+	 * On: the possession is never lost by itself. Only an opponent's Dash, a pass or a kick free the ball. The ball velocity is set each frame
+	 * (no capped push, no inertia on sharp turns), LoseDistance and LoseHeight are ignored, and a ball stuck too far (LockLeashDistance,
+	 * LockMaxHeight) is put back at the feet. Off (default): the ball is pushed toward the dribble point and can be lost (Loss settings).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Lock")
+	bool bLockPossession = false;
+
+	/** Locked: flat distance in cm from the dribble point beyond which the ball is put back at the feet (stuck behind furniture, a wall...). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Lock", meta = (ClampMin = "0", Units = "Centimeters", EditCondition = "bLockPossession"))
+	float LockLeashDistance = 60.f;
+
+	/** Locked: height in cm of the bottom of the ball above the player's feet beyond which the ball is put back at the feet (CatchHeightGrace applies). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "BallDribble|Lock", meta = (ClampMin = "0", Units = "Centimeters", EditCondition = "bLockPossession"))
+	float LockMaxHeight = 60.f;
+
 	// ---- Ball touches (option) ----
 
 	/**

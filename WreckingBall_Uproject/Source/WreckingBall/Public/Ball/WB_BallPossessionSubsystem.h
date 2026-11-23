@@ -4,6 +4,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "WB_BallPossessionSubsystem.generated.h"
 
+class APawn;
 class UPrimitiveComponent;
 class UNiagaraComponent;
 
@@ -23,6 +24,17 @@ struct FWB_BallKickRecord
 	bool bRebounded = false;
 	bool bHasLastVelocity = false;
 	FVector LastVelocity = FVector::ZeroVector;
+};
+
+/** Pass record of one ball: the teammate it was passed to, by whom, and when. */
+USTRUCT()
+struct FWB_BallPassRecord
+{
+	GENERATED_BODY()
+
+	TWeakObjectPtr<APawn> Receiver;
+	TWeakObjectPtr<AActor> Passer;
+	double PassTime = 0.0;
 };
 
 /** Speed trail of one ball: the Niagara component to switch, its thresholds (cm/s) and its state. */
@@ -81,7 +93,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
 	static AActor* GetBallPossessor(const UObject* WorldContextObject, const AActor* Ball);
 
-	/** Records Player as the dribbler of Ball (called by UWB_BallDribbleComponent::StartDribble). */
+	/** Records a pass of Ball by Passer toward Receiver (called by UWB_PlayerCommandComponent after the pass left). Forgotten as soon as a player takes the ball. */
+	UFUNCTION(BlueprintCallable, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
+	static void MarkBallPassed(const UObject* WorldContextObject, AActor* Ball, AActor* Passer, APawn* Receiver);
+
+	/** Ball passed to Receiver and not taken by anyone yet, or None. OutPassAge: seconds since that pass. */
+	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
+	static AActor* FindBallPassedTo(const UObject* WorldContextObject, const APawn* Receiver, float& OutPassAge);
+
+	/** Receiver of the pass Ball is travelling on, or None (no pass, or the ball was taken since). */
+	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
+	static APawn* GetPassReceiver(const UObject* WorldContextObject, const AActor* Ball);
+
+	/** Records Player as the dribbler of Ball (called by UWB_BallDribbleComponent::StartDribble). Ends the pass Ball was on. */
 	static void SetBallDribbler(const UObject* WorldContextObject, AActor* Ball, AActor* Player);
 
 	/** Forgets the dribbler of Ball, only if it is still Player (called by UWB_BallDribbleComponent::StopDribble). */
@@ -114,6 +138,9 @@ private:
 
 	/** Ball -> player who dribbles it. */
 	TMap<TWeakObjectPtr<AActor>, TWeakObjectPtr<AActor>> Dribblers;
+
+	/** Ball -> pass it is travelling on. */
+	TMap<TWeakObjectPtr<AActor>, FWB_BallPassRecord> Passes;
 
 	void TickTrails();
 

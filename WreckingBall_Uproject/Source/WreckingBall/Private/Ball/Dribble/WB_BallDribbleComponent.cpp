@@ -142,6 +142,37 @@ FVector UWB_BallDribbleComponent::GetPathPoint(const FVector& BallCenter, const 
 	return FVector(Waypoint.X, Waypoint.Y, Target.Z);
 }
 
+void UWB_BallDribbleComponent::PutBallAtFeet(UPrimitiveComponent* Body, const FVector& DribblePoint, const FVector& PlayerCenter, float FeetZ, float BallRadius, const FVector& PlayerFlatVelocity)
+{
+	AActor* Ball = Body->GetOwner();
+	// Ball center just above the floor. 1 cm: technical lift so the ball does not start inside the floor.
+	const float CenterZ = FeetZ + BallRadius + 1.f;
+	const FVector Start(PlayerCenter.X, PlayerCenter.Y, CenterZ);
+	const FVector End(DribblePoint.X, DribblePoint.Y, CenterZ);
+
+	// Swept with the ball's own collision, from the player to the dribble point: a wall in front stops the ball before it.
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WBBallDribbleLeash), false);
+	Params.AddIgnoredActor(Ball);
+	Params.AddIgnoredActor(Character);
+	FCollisionResponseParams Responses(Body->GetCollisionResponseToChannels());
+	FHitResult Hit;
+	FVector Destination = End;
+	if (GetWorld()->SweepSingleByChannel(Hit, Start, End, FQuat::Identity, Body->GetCollisionObjectType(), FCollisionShape::MakeSphere(BallRadius), Params, Responses))
+	{
+		Destination = Hit.bStartPenetrating ? Start : Hit.Location;
+	}
+
+	const FVector Delta = Destination - Body->Bounds.Origin;
+	Ball->SetActorLocation(Ball->GetActorLocation() + Delta, false, nullptr, ETeleportType::TeleportPhysics);
+	Body->SetPhysicsLinearVelocity(PlayerFlatVelocity);
+	Body->SetPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+	TimeBeyondLoseDistance = 0.f;
+	if (bDebugLogLoss)
+	{
+		UE_LOG(LogWBBallDribble, Log, TEXT("%s: %s put back at the feet (locked possession)."), *GetNameSafe(Character), *GetNameSafe(Ball));
+	}
+}
+
 void UWB_BallDribbleComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -178,6 +209,42 @@ void UWB_BallDribbleComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
 	const float GapSize = Gap.Size();
 	// Just after a catch (CatchHeightGrace), a ball still in the air is kept: gravity brings it down to the feet.
 	const bool bHeightGrace = GetWorld()->GetTimeSeconds() - DribbleStartTime < Profile->CatchHeightGrace;
+
+	if (Profile->bLockPossession)
+	{
+		// Locked: never lost by itself. Too far or too high (stuck, bumped): back at the feet.
+		if (GapSize > Profile->LockLeashDistance || (BallBottomHeight > Profile->LockMaxHeight && !bHeightGrace))
+		{
+			PutBallAtFeet(Body, DribblePoint, PlayerCenter, FeetZ, BallRadius, PlayerFlatVelocity);
+			return;
+		}
+		// The velocity is set, not pushed: no inertia, the ball follows every turn. The height stays to gravity and the floor.
+		const FVector PathPoint = GetPathPoint(BallCenter, DribblePoint, PlayerCenter, KeepOutRadius, Forward);
+		const FVector PathGap(PathPoint.X - BallCenter.X, PathPoint.Y - BallCenter.Y, 0.f);
+		const FVector TargetVelocity = PlayerFlatVelocity + PathGap * Profile->FollowStiffness;
+		const FVector BallVelocity = Body->GetPhysicsLinearVelocity();
+		Body->SetPhysicsLinearVelocity(FVector(TargetVelocity.X, TargetVelocity.Y, BallVelocity.Z));
+
+		if (Profile->RollFollowSpeed > 0.f && BallRadius > UE_KINDA_SMALL_NUMBER && IsBallOnGround(Body, BallRadius))
+		{
+			const FVector TargetSpin = FVector::CrossProduct(FVector::UpVector, FVector(TargetVelocity.X, TargetVelocity.Y, 0.f)) / BallRadius;
+			const FVector Spin = Body->GetPhysicsAngularVelocityInRadians();
+			const float Alpha = 1.f - FMath::Exp(-Profile->RollFollowSpeed * DeltaTime);
+			Body->SetPhysicsAngularVelocityInRadians(FMath::Lerp(Spin, TargetSpin, Alpha));
+		}
+
+#if ENABLE_DRAW_DEBUG
+		if (bDebugDrawDribble)
+		{
+			UWorld* World = GetWorld();
+			DrawDebugSphere(World, DribblePoint, 6.f, 8, FColor::Green, false, 0.f);
+			DrawDebugSphere(World, PathPoint, 4.f, 8, FColor::Cyan, false, 0.f);
+			DrawDebugCircle(World, DribblePoint, Profile->LockLeashDistance, 32, FColor::Purple, false, 0.f, 0, 1.f, FVector::ForwardVector, FVector::RightVector, false);
+		}
+#endif
+		return;
+	}
+
 	if (BallBottomHeight > Profile->LoseHeight && !bHeightGrace)
 	{
 		LoseBall(*FString::Printf(TEXT("height %.0f cm > LoseHeight %.0f"), BallBottomHeight, Profile->LoseHeight));

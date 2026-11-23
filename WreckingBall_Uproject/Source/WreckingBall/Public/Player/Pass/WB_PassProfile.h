@@ -44,6 +44,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pass|Aim", meta = (ClampMin = "0", Units = "Seconds"))
 	float MaxLeadTime = 1.f;
 
+	/**
+	 * On: aim assist. The pass goes to the teammate pointed by the stick only when it stands within AimAssistAngle of the stick direction
+	 * (stick at rest: the player's facing); else it is a free pass along that direction, with no receiver. Off (default): the pass always goes
+	 * to the teammate best aligned with the stick, whatever the angle (nearest teammate when the stick is at rest).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pass|Aim")
+	bool bUseAimAssist = false;
+
+	/** Aim assist: half-angle in degrees of the cone around the stick direction in which a teammate gets the pass. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pass|Aim", meta = (ClampMin = "0", ClampMax = "90", Units = "Degrees", EditCondition = "bUseAimAssist"))
+	float AimAssistAngle = 15.f;
+
+	/** Aim assist: a free pass (no teammate in the cone) gets the speed of a pass to a receiver this many cm away. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pass|Aim", meta = (ClampMin = "0", Units = "Centimeters", EditCondition = "bUseAimAssist"))
+	float FreePassDistance = 800.f;
+
 	/** Ball function (Blueprint interface) that returns its physics profile (PDA_PhysicsProfile). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pass|Readout")
 	FName PhysicsProfileFunction = TEXT("GetPhysicsProfile");
@@ -59,6 +75,10 @@ public:
 	 */
 	UFUNCTION(BlueprintPure, Category = "Pass", meta = (ReturnDisplayName = "Valid"))
 	bool ComputePassVelocity(FVector BallLocation, FVector ReceiverLocation, FVector ReceiverVelocity, float MaxKickSpeed, FVector& OutVelocity) const;
+
+	/** Flat ball velocity (cm/s) of a free pass along Direction: the speed of a pass over FreePassDistance. False when Direction is zero. */
+	UFUNCTION(BlueprintPure, Category = "Pass", meta = (ReturnDisplayName = "Valid"))
+	bool ComputeFreePassVelocity(FVector Direction, float MaxKickSpeed, FVector& OutVelocity) const;
 
 	/** Max kick speed of Ball, read from its physics profile (PhysicsProfileFunction, MaxKickSpeedVariable). Returns false, with a warning, when it cannot be read. */
 	UFUNCTION(BlueprintPure, Category = "Pass", meta = (ReturnDisplayName = "Found"))

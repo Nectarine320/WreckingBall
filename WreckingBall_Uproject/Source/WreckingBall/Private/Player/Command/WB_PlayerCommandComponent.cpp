@@ -5,6 +5,8 @@
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Ball/Dribble/WB_BallDribbleComponent.h"
+#include "Ball/WB_BallPossessionSubsystem.h"
+#include "Match/WB_TeamLibrary.h"
 #include "Player/Dash/WB_PlayerDashProfile.h"
 #include "Player/Pass/WB_PassProfile.h"
 #include "Player/Energy/WB_PlayerEnergyProfile.h"
@@ -76,17 +78,8 @@ bool UWB_PlayerCommandComponent::ComputePassVelocity(APawn* Receiver, FVector& O
 {
 	OutVelocity = FVector::ZeroVector;
 	const AActor* Owner = GetOwner();
-	if (!Owner || !Receiver)
+	if (!Owner || !Receiver || !HasPassProfile())
 	{
-		return false;
-	}
-	if (!PassProfile)
-	{
-		if (!bWarnedNoPassProfile)
-		{
-			bWarnedNoPassProfile = true;
-			UE_LOG(LogWBPlayerCommand, Warning, TEXT("%s: no PassProfile on %s (DA_Pass_Default expected). Passes are refused."), *GetNameSafe(Owner), *GetName());
-		}
 		return false;
 	}
 	const UWB_BallDribbleComponent* Dribble = Owner->FindComponentByClass<UWB_BallDribbleComponent>();
@@ -103,15 +96,52 @@ bool UWB_PlayerCommandComponent::ComputePassVelocity(APawn* Receiver, FVector& O
 	return PassProfile->ComputePassVelocity(Ball->GetActorLocation(), Receiver->GetActorLocation(), Receiver->GetVelocity(), MaxKickSpeed, OutVelocity);
 }
 
-bool UWB_PlayerCommandComponent::RequestPass(APawn* Receiver)
+bool UWB_PlayerCommandComponent::HasPassProfile() const
+{
+	if (PassProfile)
+	{
+		return true;
+	}
+	if (!bWarnedNoPassProfile)
+	{
+		bWarnedNoPassProfile = true;
+		UE_LOG(LogWBPlayerCommand, Warning, TEXT("%s: no PassProfile on %s (DA_Pass_Default expected). Passes are refused."), *GetNameSafe(GetOwner()), *GetName());
+	}
+	return false;
+}
+
+bool UWB_PlayerCommandComponent::CanPassNow() const
 {
 	const AActor* Owner = GetOwner();
-	if (!Owner || !Receiver || Receiver == Owner || !IsHoldingBall())
+	if (!Owner || !IsHoldingBall())
 	{
 		return false;
 	}
 	const UWB_PlayerStateComponent* State = Owner->FindComponentByClass<UWB_PlayerStateComponent>();
-	if (!State || !State->IsInState(WBTags::Player_State_Free))
+	return State && State->IsInState(WBTags::Player_State_Free);
+}
+
+bool UWB_PlayerCommandComponent::FirePass(APawn* Receiver, const FVector& Velocity)
+{
+	AActor* Owner = GetOwner();
+	const UWB_BallDribbleComponent* Dribble = Owner ? Owner->FindComponentByClass<UWB_BallDribbleComponent>() : nullptr;
+	AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
+
+	SetFacingDirection(Velocity);
+	OnPassCommand.Broadcast(Receiver, Velocity);
+	const bool bPassed = !IsHoldingBall();
+	if (bPassed && Receiver && Ball)
+	{
+		// The receiver bot reads it to run to the ball's path (ReceivePass).
+		UWB_BallPossessionSubsystem::MarkBallPassed(this, Ball, Owner, Receiver);
+	}
+	return bPassed;
+}
+
+bool UWB_PlayerCommandComponent::RequestPass(APawn* Receiver)
+{
+	const AActor* Owner = GetOwner();
+	if (!Owner || !Receiver || Receiver == Owner || !CanPassNow())
 	{
 		return false;
 	}
@@ -120,9 +150,62 @@ bool UWB_PlayerCommandComponent::RequestPass(APawn* Receiver)
 	{
 		return false;
 	}
-	SetFacingDirection(Velocity);
-	OnPassCommand.Broadcast(Receiver, Velocity);
-	return !IsHoldingBall();
+	return FirePass(Receiver, Velocity);
+}
+
+bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn*& OutReceiver)
+{
+	OutReceiver = nullptr;
+	APawn* Owner = Cast<APawn>(GetOwner());
+	if (!Owner || !CanPassNow() || !HasPassProfile())
+	{
+		return false;
+	}
+
+	Direction.Z = 0.f;
+	if (!PassProfile->bUseAimAssist)
+	{
+		// Legacy: the teammate best aligned with the stick, whatever the angle.
+		APawn* Receiver = UWB_TeamLibrary::FindDirectionalAlly(Owner, Direction, false);
+		if (!Receiver || !RequestPass(Receiver))
+		{
+			return false;
+		}
+		OutReceiver = Receiver;
+		return true;
+	}
+
+	// Stick at rest: the player's facing. Below 0.01 the stick is at rest (technical value, input vectors are 0..1).
+	if (!Direction.Normalize(0.01f))
+	{
+		Direction = Owner->GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	// The best aligned teammate gets the pass only inside the cone.
+	if (APawn* Candidate = UWB_TeamLibrary::FindDirectionalAlly(Owner, Direction, false))
+	{
+		const FVector ToCandidate = (Candidate->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D();
+		if (FVector::DotProduct(ToCandidate, Direction) >= FMath::Cos(FMath::DegreesToRadians(PassProfile->AimAssistAngle)))
+		{
+			if (!RequestPass(Candidate))
+			{
+				return false;
+			}
+			OutReceiver = Candidate;
+			return true;
+		}
+	}
+
+	// Free pass along the stick.
+	const UWB_BallDribbleComponent* Dribble = Owner->FindComponentByClass<UWB_BallDribbleComponent>();
+	const AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
+	float MaxKickSpeed = 0.f;
+	FVector Velocity;
+	if (!Ball || !PassProfile->ReadBallMaxKickSpeed(Ball, MaxKickSpeed) || !PassProfile->ComputeFreePassVelocity(Direction, MaxKickSpeed, Velocity))
+	{
+		return false;
+	}
+	return FirePass(nullptr, Velocity);
 }
 
 void UWB_PlayerCommandComponent::SetFacingDirection(FVector WorldDirection)

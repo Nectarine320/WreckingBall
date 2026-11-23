@@ -37,7 +37,9 @@ enum class EWB_SoccerAIIntent : uint8
 	/** Team roles, Goalkeeper while the team holds the ball: move up, staying the member of the team nearest to the own goal. */
 	LastMan,
 	/** Team roles, Defender while the team holds the ball: stand in an open spot near the carrier (free pass lane), sometimes ahead of the ball. */
-	SupportOpen
+	SupportOpen,
+	/** A teammate passed the ball to this bot (AIProfile->bReceivePasses): run to the first point of the ball's path it reaches in time, face the ball and walk into it. */
+	ReceivePass
 };
 
 /**
@@ -229,6 +231,24 @@ private:
 	void TickGuardGoal(ACharacter* Me, float DeltaSeconds);
 	void TickLastMan(ACharacter* Me, float DeltaSeconds);
 	void TickSupportOpen(ACharacter* Me, float DeltaSeconds);
+
+	/** Ball passed to this bot (bReceivePasses), refreshed by ChooseIntent. */
+	TWeakObjectPtr<AActor> IncomingPassBall;
+
+	/** ReceivePass: point of the ball's path the bot runs to (debug). */
+	FVector PassInterceptPoint = FVector::ZeroVector;
+
+	/** True when a pass to this bot is travelling and younger than ReceivePassMaxTime. Sets IncomingPassBall. */
+	bool RefreshIncomingPass();
+
+	/** ReceivePass: runs to the ball's path, faces the ball, then walks into it. */
+	void TickReceivePass(ACharacter* Me, float DeltaSeconds);
+
+	/**
+	 * First point of the ball's path (ball at BallLocation, flat velocity BallVelocity, slowing down by the pass profile's RollingDeceleration)
+	 * the bot reaches at least ReceivePassMargin seconds before the ball. The end of the path when it reaches none.
+	 */
+	FVector GetPassInterceptPoint(const ACharacter* Me, const FVector& BallLocation, const FVector& BallVelocity) const;
 
 	/** Score (cm) of an open spot for a pass from Carrier: see SupportOpenLaneWeight in the profile. */
 	float ScoreSupportSpot(const FVector& CarrierLocation, const FVector& Spot, const FVector& Forward) const;

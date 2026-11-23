@@ -80,7 +80,7 @@ public:
 
 	/**
 	 * The switch / pass button of PlayerController. Without the ball: takes the teammate bot pointed by the stick (nearest when the stick is at rest).
-	 * With the ball: passes to the teammate pointed by the stick; when a bot drives the receiver, PlayerController takes it as soon as it catches the ball
+	 * With the ball: passes toward the stick (UWB_PlayerCommandComponent::RequestDirectionalPass: aim assist, or a free pass); when a bot drives the receiver, PlayerController takes it as soon as it catches the ball
 	 * (the pass is cancelled if someone else catches it first). Pressed again while the pass travels: takes the receiver at once.
 	 * Never an opponent, never another human's character. Refused during RosterProfile->SwitchCooldown after the last switch or pass.
 	 * Returns true when a switch or a pass happened.

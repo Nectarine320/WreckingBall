@@ -54,6 +54,18 @@ bool UWB_PassProfile::ComputePassVelocity(FVector BallLocation, FVector Receiver
 	return true;
 }
 
+bool UWB_PassProfile::ComputeFreePassVelocity(FVector Direction, float MaxKickSpeed, FVector& OutVelocity) const
+{
+	Direction.Z = 0.f;
+	if (!Direction.Normalize())
+	{
+		OutVelocity = FVector::ZeroVector;
+		return false;
+	}
+	OutVelocity = Direction * GetPassSpeed(FreePassDistance, MaxKickSpeed);
+	return true;
+}
+
 bool UWB_PassProfile::ReadBallMaxKickSpeed(const AActor* Ball, float& OutMaxKickSpeed) const
 {
 	OutMaxKickSpeed = 0.f;
