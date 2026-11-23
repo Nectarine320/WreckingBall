@@ -5,6 +5,7 @@
 #include "WB_PlayerProfileLibrary.generated.h"
 
 class UWB_PlayerDashProfile;
+class UWB_KickProfile;
 class UWB_PlayerEnergyProfile;
 
 /**
@@ -24,4 +25,8 @@ public:
 	/** Dash profile of Player (DashProfile of its UWB_PlayerCommandComponent). Null, with a warning in the log, when the component or the profile is missing. */
 	UFUNCTION(BlueprintPure, Category = "PlayerProfile", meta = (DefaultToSelf = "Player"))
 	static const UWB_PlayerDashProfile* GetPlayerDashProfile(const AActor* Player);
+
+	/** Kick profile of Player (KickProfile of its UWB_PlayerCommandComponent). Null, with a warning in the log once, when the component or the profile is missing. */
+	UFUNCTION(BlueprintPure, Category = "PlayerProfile", meta = (DefaultToSelf = "Player"))
+	static const UWB_KickProfile* GetPlayerKickProfile(const AActor* Player);
 };

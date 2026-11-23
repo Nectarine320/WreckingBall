@@ -17,6 +17,9 @@ namespace WBGroundRing
 	static const FName RingColorParam(TEXT("RingColor"));
 	static const FName KickPercentParam(TEXT("KickPercent"));
 	static const FName ShadowStrengthParam(TEXT("ShadowStrength"));
+	static const FName GaugeThicknessParam(TEXT("GaugeThickness"));
+	static const FName KickColorStartParam(TEXT("KickColorStart"));
+	static const FName KickColorEndParam(TEXT("KickColorEnd"));
 }
 
 UWB_GroundRingComponent::UWB_GroundRingComponent()
@@ -50,6 +53,9 @@ void UWB_GroundRingComponent::BeginPlay()
 	}
 
 	RingMaterial->GetScalarParameterValue(FHashedMaterialParameterInfo(WBGroundRing::ShadowStrengthParam), BaseShadowStrength);
+	RingMaterial->GetScalarParameterValue(FHashedMaterialParameterInfo(WBGroundRing::GaugeThicknessParam), BaseGaugeThickness);
+	RingMaterial->GetVectorParameterValue(FHashedMaterialParameterInfo(WBGroundRing::KickColorStartParam), BaseKickColorStart);
+	RingMaterial->GetVectorParameterValue(FHashedMaterialParameterInfo(WBGroundRing::KickColorEndParam), BaseKickColorEnd);
 	if (bHasRingColor)
 	{
 		RingMaterial->SetVectorParameterValue(WBGroundRing::RingColorParam, RingColor);
@@ -158,11 +164,38 @@ void UWB_GroundRingComponent::SetKickPercent(float Percent)
 	{
 		return;
 	}
+	const bool bReachedFull = Percent >= 1.f && KickPercent < 1.f;
 	KickPercent = Percent;
 	if (RingMaterial)
 	{
 		RingMaterial->SetScalarParameterValue(WBGroundRing::KickPercentParam, KickPercent);
 	}
+
+	if (bReachedFull && RingMaterial && Profile && Profile->bUseFullChargePulse)
+	{
+		// The gauge just got full: one pulse.
+		bPulsing = true;
+		PulseElapsed = 0.f;
+		SetComponentTickEnabled(true);
+	}
+	else if (KickPercent <= 0.f && bPulsing)
+	{
+		// Charge released or cancelled during the pulse: back to the base look at once.
+		bPulsing = false;
+		ApplyPulse(0.f);
+		RefreshState();
+	}
+}
+
+void UWB_GroundRingComponent::ApplyPulse(float Weight)
+{
+	if (!RingMaterial || !Profile)
+	{
+		return;
+	}
+	RingMaterial->SetScalarParameterValue(WBGroundRing::GaugeThicknessParam, FMath::Lerp(BaseGaugeThickness, Profile->FullChargePulseThickness, Weight));
+	RingMaterial->SetVectorParameterValue(WBGroundRing::KickColorStartParam, FMath::Lerp(BaseKickColorStart, Profile->FullChargePulseColor, Weight));
+	RingMaterial->SetVectorParameterValue(WBGroundRing::KickColorEndParam, FMath::Lerp(BaseKickColorEnd, Profile->FullChargePulseColor, Weight));
 }
 
 void UWB_GroundRingComponent::SetRingActive(bool bActive)
@@ -182,7 +215,7 @@ void UWB_GroundRingComponent::RefreshState()
 		return;
 	}
 	const bool bSnap = UsesSnap();
-	SetComponentTickEnabled(bRingActive && bSnap);
+	SetComponentTickEnabled((bRingActive && bSnap) || bPulsing);
 
 	bool bShowDecal = bRingActive;
 	if (bShowDecal && bSnap)
@@ -195,6 +228,20 @@ void UWB_GroundRingComponent::RefreshState()
 void UWB_GroundRingComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (bPulsing && Profile)
+	{
+		// Up then down: thicker and colored at mid-pulse, back to the base look at the end.
+		PulseElapsed += DeltaTime;
+		const float Alpha = FMath::Clamp(PulseElapsed / FMath::Max(Profile->FullChargePulseDuration, UE_KINDA_SMALL_NUMBER), 0.f, 1.f);
+		ApplyPulse(FMath::Sin(Alpha * UE_PI));
+		if (Alpha >= 1.f)
+		{
+			bPulsing = false;
+			ApplyPulse(0.f);
+			RefreshState();
+		}
+	}
 
 	if (RingVisual && bRingActive && UsesSnap())
 	{

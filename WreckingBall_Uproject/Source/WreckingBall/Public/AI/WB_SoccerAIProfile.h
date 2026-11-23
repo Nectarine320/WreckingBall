@@ -124,6 +124,28 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", ClampMax = "1"))
 	float BotBreachDashCharge = 1.f;
 
+	/**
+	 * Rubber band. On: the bots of the team that trails in score Dash on players more often: their cooldown is RubberBandDashCooldowns
+	 * for the goal gap instead of DashCooldown. Tied score and leading team: DashCooldown. Off (default): always DashCooldown.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash|Rubber Band")
+	bool bUseRubberBandDash = false;
+
+	/**
+	 * Rubber band: Dash cooldown in seconds of a trailing team's bot, by goal gap. Entry 0: 1 goal behind, entry 1: 2 goals behind, and so on;
+	 * a larger gap uses the last entry. Empty: DashCooldown.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash|Rubber Band", meta = (EditCondition = "bUseRubberBandDash"))
+	TArray<float> RubberBandDashCooldowns = { 5.f, 4.f };
+
+	/** Rubber band: number variable of the game mode holding the score of team 0 (red). BP_SoccerGamemode: ScoreRed. Technical. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash|Rubber Band", meta = (EditCondition = "bUseRubberBandDash"))
+	FName ScoreTeam0Variable = TEXT("ScoreRed");
+
+	/** Rubber band: number variable of the game mode holding the score of team 1 (blue). BP_SoccerGamemode: ScoreBlue. Technical. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash|Rubber Band", meta = (EditCondition = "bUseRubberBandDash"))
+	FName ScoreTeam1Variable = TEXT("ScoreBlue");
+
 	/** Seconds between two Dashes of the bot into a wall it breaks through (bAllowBreach). Separate from DashCooldown. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", Units = "Seconds"))
 	float BreachDashCooldown = 2.5f;

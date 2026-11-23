@@ -5,6 +5,7 @@
 #include "WB_PlayerCommandComponent.generated.h"
 
 class UWB_PlayerDashProfile;
+class UWB_KickProfile;
 class UWB_PassProfile;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnMoveCommand, float, XAxis, float, YAxis);
@@ -64,8 +65,8 @@ public:
 	bool RequestPass(APawn* Receiver, float Charge = 0.f);
 
 	/**
-	 * Passes the dribbled ball in Direction (world, flat; zero: the owner's facing). PassProfile->bUseAimAssist on: to the teammate within
-	 * AimAssistAngle of Direction, else a free pass along Direction (OutReceiver None). Off: to the teammate best aligned with Direction.
+	 * Passes the dribbled ball in Direction (world, flat; zero: the owner's facing). PassProfile->bUsePassAimAssist on: to the teammate within
+	 * PassAimAssistAngle of Direction, else a free pass along Direction (OutReceiver None). Off: to the teammate best aligned with Direction.
 	 * Same refusals as RequestPass. Charge (0..1, charged pass): faster pass and, when strong, a small lift (PassProfile). Returns true when the ball left the owner.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
@@ -184,6 +185,10 @@ public:
 	/** Dash settings of the player: distance, duration, scan, run-ups, damage angle (DA_PlayerDash_Default). Read by BP_GenericCharacter and the bots. Required: empty, a warning is logged and the bots never Dash. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand")
 	TObjectPtr<UWB_PlayerDashProfile> DashProfile;
+
+	/** Kick and throw charge settings of the player (DA_Kick_Default). Read by BPC_HeldObjectActions through GetPlayerKickProfile. Required: empty, a warning is logged and the charge does not rise. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand")
+	TObjectPtr<UWB_KickProfile> KickProfile;
 
 	/** The Dash profile (DashProfile). Null when it is not assigned (a warning is logged once). */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand")

@@ -76,6 +76,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SoccerAI")
 	bool bBrainPaused = false;
 
+	/**
+	 * Seconds the bot waits after a Dash on a player: DashCooldown, or with bUseRubberBandDash and the bot's team trailing in score,
+	 * RubberBandDashCooldowns for the goal gap (score read on the game mode, ScoreTeam0Variable / ScoreTeam1Variable).
+	 */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI")
+	float GetDashCooldown() const;
+
 	/** Makes the Dash on a player available at once (DashCooldown restarts at the next Dash). Called by the match roster after a goal (ResetCharactersToPlaces). */
 	UFUNCTION(BlueprintCallable, Category = "SoccerAI")
 	void ResetDashCooldown();
@@ -253,7 +260,7 @@ private:
 	void TickReceivePass(ACharacter* Me, float DeltaSeconds);
 
 	/**
-	 * First point of the ball's path (ball at BallLocation, flat velocity BallVelocity, slowing down by the pass profile's RollingDeceleration)
+	 * First point of the ball's path (ball at BallLocation, flat velocity BallVelocity, slowing down by the pass profile's PassRollingDeceleration)
 	 * the bot reaches at least ReceivePassMargin seconds before the ball. The end of the path when it reaches none.
 	 */
 	FVector GetPassInterceptPoint(const ACharacter* Me, const FVector& BallLocation, const FVector& BallVelocity) const;

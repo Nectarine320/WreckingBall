@@ -80,6 +80,18 @@ private:
 	/** ShadowStrength of the material instance, read when the dynamic material is created (base of the height fade). */
 	float BaseShadowStrength = 0.f;
 
+	/** Gauge thickness and colors of the material instance, read when the dynamic material is created (base of the full charge pulse). */
+	float BaseGaugeThickness = 0.f;
+	FLinearColor BaseKickColorStart = FLinearColor::White;
+	FLinearColor BaseKickColorEnd = FLinearColor::White;
+
+	/** Full charge pulse in progress (Profile->bUseFullChargePulse) and its elapsed time. */
+	bool bPulsing = false;
+	float PulseElapsed = 0.f;
+
+	/** Applies the pulse at Weight (0: base look, 1: peak). */
+	void ApplyPulse(float Weight);
+
 	bool UsesSnap() const;
 
 	/** Creates the decal (default) or the flat mesh (bUseMesh). Returns false and logs a warning when the profile misses an asset. */

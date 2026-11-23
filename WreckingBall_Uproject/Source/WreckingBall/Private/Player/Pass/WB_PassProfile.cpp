@@ -1,5 +1,6 @@
 #include "Player/Pass/WB_PassProfile.h"
 
+#include "Data/WB_DataReadLibrary.h"
 #include "Player/Charge/WB_ChargeLibrary.h"
 #include "GameFramework/Actor.h"
 #include "UObject/UnrealType.h"
@@ -14,11 +15,11 @@ namespace
 
 float UWB_PassProfile::GetPassSpeed(float Distance, float MaxKickSpeed, float SpeedMultiplier) const
 {
-	// Speed that still leaves ArrivalSpeed at the receiver after rolling Distance: v0^2 = v1^2 + 2 a d. A charged pass multiplies it.
-	float Speed = FMath::Sqrt(FMath::Square(ArrivalSpeed) + 2.f * RollingDeceleration * FMath::Max(Distance, 0.f)) * FMath::Max(SpeedMultiplier, 1.f);
+	// Speed that still leaves PassArrivalSpeed at the receiver after rolling Distance: v0^2 = v1^2 + 2 a d. A charged pass multiplies it.
+	float Speed = FMath::Sqrt(FMath::Square(PassArrivalSpeed) + 2.f * PassRollingDeceleration * FMath::Max(Distance, 0.f)) * FMath::Max(SpeedMultiplier, 1.f);
 	if (MaxKickSpeed > 0.f)
 	{
-		Speed = FMath::Clamp(Speed, MinKickShare * MaxKickSpeed, MaxKickSpeed);
+		Speed = FMath::Clamp(Speed, PassMinShareOfMaxKickSpeed * MaxKickSpeed, MaxKickSpeed);
 	}
 	return Speed;
 }
@@ -37,9 +38,9 @@ bool UWB_PassProfile::ComputePassVelocity(FVector BallLocation, FVector Receiver
 		for (int32 i = 0; i < LeadIterations; ++i)
 		{
 			const float Distance = FVector::Dist(BallLocation, AimPoint);
-			// Mean speed of a ball slowing down from Speed to (about) ArrivalSpeed.
-			const float MeanSpeed = FMath::Max((Speed + FMath::Min(ArrivalSpeed, Speed)) * 0.5f, 1.f);
-			const float TravelTime = FMath::Min(Distance / MeanSpeed, MaxLeadTime);
+			// Mean speed of a ball slowing down from Speed to (about) PassArrivalSpeed.
+			const float MeanSpeed = FMath::Max((Speed + FMath::Min(PassArrivalSpeed, Speed)) * 0.5f, 1.f);
+			const float TravelTime = FMath::Min(Distance / MeanSpeed, PassMaxLeadTime);
 			AimPoint = ReceiverLocation + ReceiverVelocity * TravelTime;
 			Speed = GetPassSpeed(FVector::Dist(BallLocation, AimPoint), MaxKickSpeed, SpeedMultiplier);
 		}
@@ -69,22 +70,22 @@ bool UWB_PassProfile::ComputeFreePassVelocity(FVector Direction, float MaxKickSp
 
 float UWB_PassProfile::GetChargeFromHoldTime(float HoldTime) const
 {
-	return bUseChargedPass ? UWB_ChargeLibrary::GetChargeFromHoldTime(HoldTime, ChargeMinHoldTime, PassChargeTime) : 0.f;
+	return bUseChargedPass ? UWB_ChargeLibrary::GetChargeFromHoldTime(HoldTime, PassChargeMinHoldTime, PassChargeTime) : 0.f;
 }
 
 float UWB_PassProfile::GetChargeSpeedMultiplier(float Charge) const
 {
-	return FMath::Lerp(1.f, ChargedPassMaxSpeedMultiplier, FMath::Clamp(Charge, 0.f, 1.f));
+	return FMath::Lerp(1.f, PassFullChargeSpeedMultiplier, FMath::Clamp(Charge, 0.f, 1.f));
 }
 
 FVector UWB_PassProfile::ApplyPassLoft(FVector FlatVelocity, float Charge) const
 {
-	if (Charge < PassLoftMinCharge || Charge <= 0.f || PassMaxLoftAngle <= 0.f)
+	if (Charge < PassLoftMinCharge || Charge <= 0.f || PassFullChargeMaxLoftAngle <= 0.f)
 	{
 		return FlatVelocity;
 	}
 	// Same lift as the kick (ApplyKickLoft): the speed is kept, part of it goes up.
-	const float Angle = FMath::DegreesToRadians(FMath::FRandRange(0.f, PassMaxLoftAngle));
+	const float Angle = FMath::DegreesToRadians(FMath::FRandRange(0.f, PassFullChargeMaxLoftAngle));
 	const FVector Flat(FlatVelocity.X, FlatVelocity.Y, 0.f);
 	return Flat * FMath::Cos(Angle) + FVector(0.f, 0.f, Flat.Size() * FMath::Sin(Angle));
 }
@@ -140,4 +141,60 @@ bool UWB_PassProfile::ReadBallMaxKickSpeed(const AActor* Ball, float& OutMaxKick
 		? static_cast<float>(Property->GetFloatingPointPropertyValue(Value))
 		: static_cast<float>(Property->GetSignedIntPropertyValue(Value));
 	return true;
+}
+
+void UWB_PassProfile::PostLoad()
+{
+	Super::PostLoad();
+	RefreshPreview();
+}
+
+#if WITH_EDITOR
+void UWB_PassProfile::PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent)
+{
+	Super::PostEditChangeProperty(PropertyChangedEvent);
+	RefreshPreview();
+}
+#endif
+
+void UWB_PassProfile::ComputeTravel(float Speed, float Distance, float& OutTime, float& OutArrivalSpeed) const
+{
+	OutTime = 0.f;
+	OutArrivalSpeed = 0.f;
+	if (Speed <= 0.f)
+	{
+		return;
+	}
+	if (PassRollingDeceleration <= 0.f)
+	{
+		OutTime = Distance / Speed;
+		OutArrivalSpeed = Speed;
+		return;
+	}
+	// v1^2 = v0^2 - 2 a d; negative: the ball stops before the receiver.
+	const float ArrivalSquared = FMath::Square(Speed) - 2.f * PassRollingDeceleration * Distance;
+	if (ArrivalSquared < 0.f)
+	{
+		return;
+	}
+	OutArrivalSpeed = FMath::Sqrt(ArrivalSquared);
+	OutTime = (Speed - OutArrivalSpeed) / PassRollingDeceleration;
+}
+
+void UWB_PassProfile::RefreshPreview()
+{
+	PreviewBallMaxKickSpeed = 0.f;
+	UWB_DataReadLibrary::ReadNumber(SimulatedBallPhysics, MaxKickSpeedVariable, PreviewBallMaxKickSpeed);
+
+	const float FullMultiplier = bUseChargedPass ? PassFullChargeSpeedMultiplier : 1.f;
+	PreviewWeakPassSpeed = GetPassSpeed(SimulatedPassDistance, PreviewBallMaxKickSpeed, 1.f);
+	PreviewFullPassSpeed = GetPassSpeed(SimulatedPassDistance, PreviewBallMaxKickSpeed, FullMultiplier);
+	bPreviewFullPassCapped = PreviewBallMaxKickSpeed > 0.f && GetPassSpeed(SimulatedPassDistance, 0.f, FullMultiplier) > PreviewBallMaxKickSpeed;
+	PreviewWeakFreePassSpeed = GetPassSpeed(FreePassDistance, PreviewBallMaxKickSpeed, 1.f);
+	PreviewFullFreePassSpeed = GetPassSpeed(FreePassDistance, PreviewBallMaxKickSpeed, FullMultiplier);
+
+	ComputeTravel(PreviewWeakPassSpeed, SimulatedPassDistance, PreviewWeakTravelTime, PreviewWeakArrivalSpeed);
+	ComputeTravel(PreviewFullPassSpeed, SimulatedPassDistance, PreviewFullTravelTime, PreviewFullArrivalSpeed);
+
+	PreviewLoftStartHoldTime = bUseChargedPass ? FMath::Lerp(PassChargeMinHoldTime, PassChargeTime, PassLoftMinCharge) : 0.f;
 }

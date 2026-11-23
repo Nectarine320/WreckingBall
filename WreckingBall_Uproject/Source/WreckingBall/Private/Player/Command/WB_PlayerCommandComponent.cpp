@@ -250,7 +250,7 @@ bool UWB_PlayerCommandComponent::FirePass(APawn* Receiver, const FVector& FlatVe
 	AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
 
 	bChargingPass = false;
-	// Strong charged pass: a small lift (PassMaxLoftAngle). The facing stays flat.
+	// Strong charged pass: a small lift (PassFullChargeMaxLoftAngle). The facing stays flat.
 	const FVector Velocity = PassProfile ? PassProfile->ApplyPassLoft(FlatVelocity, Charge) : FlatVelocity;
 	SetFacingDirection(FlatVelocity);
 	OnPassCommand.Broadcast(Receiver, Velocity);
@@ -314,7 +314,7 @@ bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn
 	}
 
 	Direction.Z = 0.f;
-	if (!PassProfile->bUseAimAssist)
+	if (!PassProfile->bUsePassAimAssist)
 	{
 		// Legacy: the teammate best aligned with the stick, whatever the angle.
 		APawn* Receiver = UWB_TeamLibrary::FindDirectionalAlly(Owner, Direction, false);
@@ -336,7 +336,7 @@ bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn
 	if (APawn* Candidate = UWB_TeamLibrary::FindDirectionalAlly(Owner, Direction, false))
 	{
 		const FVector ToCandidate = (Candidate->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D();
-		if (FVector::DotProduct(ToCandidate, Direction) >= FMath::Cos(FMath::DegreesToRadians(PassProfile->AimAssistAngle)))
+		if (FVector::DotProduct(ToCandidate, Direction) >= FMath::Cos(FMath::DegreesToRadians(PassProfile->PassAimAssistAngle)))
 		{
 			if (!RequestPass(Candidate, Charge))
 			{

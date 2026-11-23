@@ -109,5 +109,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Snap", meta = (ClampMin = "0", ClampMax = "1", EditCondition = "bSnapToGround && bFadeShadowWithHeight"))
 	float MinShadowFactor = 0.3f;
 
+	// ---- Full charge pulse (kick, pass, Dash gauge) ----
+
+	/**
+	 * On: when the gauge (SetKickPercent) reaches its full charge, it pulses once: the gauge grows thicker toward the player and blinks
+	 * FullChargePulseColor, then goes back to its colors and thickness, over FullChargePulseDuration. Off (default): no pulse.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Full Charge Pulse")
+	bool bUseFullChargePulse = false;
+
+	/** Seconds of the whole pulse (thicker and colored, then back). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Full Charge Pulse", meta = (ClampMin = "0.01", Units = "Seconds", EditCondition = "bUseFullChargePulse"))
+	float FullChargePulseDuration = 0.3f;
+
+	/** Color the gauge blinks to at the peak of the pulse (KickColorStart and KickColorEnd of M_GroundRing). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Full Charge Pulse", meta = (EditCondition = "bUseFullChargePulse"))
+	FLinearColor FullChargePulseColor = FLinearColor(0.45f, 1.f, 0.f, 1.f);
+
+	/** Gauge thickness at the peak of the pulse (GaugeThickness of M_GroundRing, same unit: the player ring uses 0.12). Grows toward the player. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "GroundRing|Full Charge Pulse", meta = (ClampMin = "0", EditCondition = "bUseFullChargePulse"))
+	float FullChargePulseThickness = 0.2f;
+
 	UWB_GroundRingProfile();
 };

@@ -2,6 +2,8 @@
 
 #include "Debug/WB_DebugTextSubsystem.h"
 #include "AI/WB_SoccerAIProfile.h"
+#include "Data/WB_DataReadLibrary.h"
+#include "GameFramework/GameModeBase.h"
 #include "AI/Team/WB_TeamCoordinatorComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
@@ -90,6 +92,45 @@ const UWB_SoccerAIProfile* AWB_SoccerAIController_Base::GetActiveProfile() const
 int32 AWB_SoccerAIController_Base::GetTeamIndex() const
 {
 	return UWB_TeamLibrary::GetTeamOf(GetPawn());
+}
+
+float AWB_SoccerAIController_Base::GetDashCooldown() const
+{
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (!Profile)
+	{
+		return 0.f;
+	}
+	const int32 Team = GetTeamIndex();
+	const UWorld* World = GetWorld();
+	const AGameModeBase* GameMode = World ? World->GetAuthGameMode() : nullptr;
+	if (!Profile->bUseRubberBandDash || Profile->RubberBandDashCooldowns.IsEmpty() || !GameMode || (Team != 0 && Team != 1))
+	{
+		return Profile->DashCooldown;
+	}
+
+	float Score0 = 0.f;
+	float Score1 = 0.f;
+	if (!UWB_DataReadLibrary::ReadNumber(GameMode, Profile->ScoreTeam0Variable, Score0) || !UWB_DataReadLibrary::ReadNumber(GameMode, Profile->ScoreTeam1Variable, Score1))
+	{
+		static bool bWarned = false;
+		if (!bWarned)
+		{
+			bWarned = true;
+			UE_LOG(LogTemp, Warning, TEXT("%s: rubber band on, but the game mode %s has no score variables '%s' / '%s'. The bots use DashCooldown."),
+				*GetName(), *GetNameSafe(GameMode), *Profile->ScoreTeam0Variable.ToString(), *Profile->ScoreTeam1Variable.ToString());
+		}
+		return Profile->DashCooldown;
+	}
+
+	// Goals behind the other team. Tied or leading: the base cooldown.
+	const int32 Gap = FMath::RoundToInt(Team == 0 ? Score1 - Score0 : Score0 - Score1);
+	if (Gap <= 0)
+	{
+		return Profile->DashCooldown;
+	}
+	const int32 Index = FMath::Min(Gap, Profile->RubberBandDashCooldowns.Num()) - 1;
+	return FMath::Max(Profile->RubberBandDashCooldowns[Index], 0.f);
 }
 
 void AWB_SoccerAIController_Base::ResetDashCooldown()
@@ -486,7 +527,7 @@ FVector AWB_SoccerAIController_Base::GetPassInterceptPoint(const ACharacter* Me,
 	const FVector Direction = Flat / Speed;
 	// Same slow-down as the pass computation (one place for the setting): DA_Pass_Default on the bot's pawn.
 	const UWB_PassProfile* PassProfile = Commands ? Commands->PassProfile.Get() : nullptr;
-	const float Deceleration = PassProfile ? PassProfile->RollingDeceleration : 0.f;
+	const float Deceleration = PassProfile ? PassProfile->PassRollingDeceleration : 0.f;
 	const float Horizon = Deceleration > 0.f ? FMath::Min(Speed / Deceleration, Profile->ReceivePassMaxTime) : Profile->ReceivePassMaxTime;
 
 	const UCharacterMovementComponent* Movement = Me->GetCharacterMovement();
@@ -585,7 +626,7 @@ bool AWB_SoccerAIController_Base::TryDashOn(ACharacter* Me, APawn* Target)
 		return false;
 	}
 	// Dash along the actor forward: face the predicted spot with a random error, so some Dashes miss.
-	NextDashTime = GetWorld()->GetTimeSeconds() + Profile->DashCooldown;
+	NextDashTime = GetWorld()->GetTimeSeconds() + GetDashCooldown();
 	const float Jitter = FMath::FRandRange(-Profile->DashAngleJitter, Profile->DashAngleJitter);
 	Commands->StopMoving();
 	const FVector AimLocation = Profile->bDashAimAtTargetLocation ? Target->GetActorLocation() : AimPoint;

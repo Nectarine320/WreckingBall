@@ -464,7 +464,7 @@ bool UWB_TeamRosterComponent::PassToward(APlayerController* PlayerController, AP
 {
 	const UWB_BallDribbleComponent* Dribble = Pawn->FindComponentByClass<UWB_BallDribbleComponent>();
 	AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
-	// Aim assist and free pass: see UWB_PassProfile::bUseAimAssist. Receiver is None after a free pass.
+	// Aim assist and free pass: see UWB_PassProfile::bUsePassAimAssist. Receiver is None after a free pass.
 	APawn* Receiver = nullptr;
 	if (!Commands->RequestDirectionalPass(Direction, Receiver, Charge))
 	{
