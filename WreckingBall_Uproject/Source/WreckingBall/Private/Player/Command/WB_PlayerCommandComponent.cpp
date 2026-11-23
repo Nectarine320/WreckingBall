@@ -74,7 +74,7 @@ bool UWB_PlayerCommandComponent::IsHoldingBall() const
 	return State && State->CurrentHolding.MatchesTag(WBTags::Player_Holding_Ball);
 }
 
-bool UWB_PlayerCommandComponent::ComputePassVelocity(APawn* Receiver, FVector& OutVelocity) const
+bool UWB_PlayerCommandComponent::ComputePassVelocity(APawn* Receiver, FVector& OutVelocity, float Charge) const
 {
 	OutVelocity = FVector::ZeroVector;
 	const AActor* Owner = GetOwner();
@@ -93,7 +93,7 @@ bool UWB_PlayerCommandComponent::ComputePassVelocity(APawn* Receiver, FVector& O
 	{
 		return false;
 	}
-	return PassProfile->ComputePassVelocity(Ball->GetActorLocation(), Receiver->GetActorLocation(), Receiver->GetVelocity(), MaxKickSpeed, OutVelocity);
+	return PassProfile->ComputePassVelocity(Ball->GetActorLocation(), Receiver->GetActorLocation(), Receiver->GetVelocity(), MaxKickSpeed, OutVelocity, PassProfile->GetChargeSpeedMultiplier(Charge));
 }
 
 bool UWB_PlayerCommandComponent::HasPassProfile() const
@@ -121,13 +121,16 @@ bool UWB_PlayerCommandComponent::CanPassNow() const
 	return State && State->IsInState(WBTags::Player_State_Free);
 }
 
-bool UWB_PlayerCommandComponent::FirePass(APawn* Receiver, const FVector& Velocity)
+bool UWB_PlayerCommandComponent::FirePass(APawn* Receiver, const FVector& FlatVelocity, float Charge)
 {
 	AActor* Owner = GetOwner();
 	const UWB_BallDribbleComponent* Dribble = Owner ? Owner->FindComponentByClass<UWB_BallDribbleComponent>() : nullptr;
 	AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
 
-	SetFacingDirection(Velocity);
+	bChargingPass = false;
+	// Strong charged pass: a small lift (PassMaxLoftAngle). The facing stays flat.
+	const FVector Velocity = PassProfile ? PassProfile->ApplyPassLoft(FlatVelocity, Charge) : FlatVelocity;
+	SetFacingDirection(FlatVelocity);
 	OnPassCommand.Broadcast(Receiver, Velocity);
 	const bool bPassed = !IsHoldingBall();
 	if (bPassed && Receiver && Ball)
@@ -138,7 +141,32 @@ bool UWB_PlayerCommandComponent::FirePass(APawn* Receiver, const FVector& Veloci
 	return bPassed;
 }
 
-bool UWB_PlayerCommandComponent::RequestPass(APawn* Receiver)
+bool UWB_PlayerCommandComponent::BeginPassCharge()
+{
+	if (!CanPassNow() || !HasPassProfile() || !PassProfile->bUseChargedPass)
+	{
+		return false;
+	}
+	bChargingPass = true;
+	PassChargeStartTime = GetWorld()->GetTimeSeconds();
+	return true;
+}
+
+void UWB_PlayerCommandComponent::CancelPassCharge()
+{
+	bChargingPass = false;
+}
+
+float UWB_PlayerCommandComponent::GetPassCharge() const
+{
+	if (!bChargingPass || !PassProfile || !GetWorld())
+	{
+		return 0.f;
+	}
+	return PassProfile->GetChargeFromHoldTime(static_cast<float>(GetWorld()->GetTimeSeconds() - PassChargeStartTime));
+}
+
+bool UWB_PlayerCommandComponent::RequestPass(APawn* Receiver, float Charge)
 {
 	const AActor* Owner = GetOwner();
 	if (!Owner || !Receiver || Receiver == Owner || !CanPassNow())
@@ -146,14 +174,14 @@ bool UWB_PlayerCommandComponent::RequestPass(APawn* Receiver)
 		return false;
 	}
 	FVector Velocity;
-	if (!ComputePassVelocity(Receiver, Velocity))
+	if (!ComputePassVelocity(Receiver, Velocity, Charge))
 	{
 		return false;
 	}
-	return FirePass(Receiver, Velocity);
+	return FirePass(Receiver, Velocity, Charge);
 }
 
-bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn*& OutReceiver)
+bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn*& OutReceiver, float Charge)
 {
 	OutReceiver = nullptr;
 	APawn* Owner = Cast<APawn>(GetOwner());
@@ -167,7 +195,7 @@ bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn
 	{
 		// Legacy: the teammate best aligned with the stick, whatever the angle.
 		APawn* Receiver = UWB_TeamLibrary::FindDirectionalAlly(Owner, Direction, false);
-		if (!Receiver || !RequestPass(Receiver))
+		if (!Receiver || !RequestPass(Receiver, Charge))
 		{
 			return false;
 		}
@@ -187,7 +215,7 @@ bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn
 		const FVector ToCandidate = (Candidate->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal2D();
 		if (FVector::DotProduct(ToCandidate, Direction) >= FMath::Cos(FMath::DegreesToRadians(PassProfile->AimAssistAngle)))
 		{
-			if (!RequestPass(Candidate))
+			if (!RequestPass(Candidate, Charge))
 			{
 				return false;
 			}
@@ -201,11 +229,11 @@ bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn
 	const AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
 	float MaxKickSpeed = 0.f;
 	FVector Velocity;
-	if (!Ball || !PassProfile->ReadBallMaxKickSpeed(Ball, MaxKickSpeed) || !PassProfile->ComputeFreePassVelocity(Direction, MaxKickSpeed, Velocity))
+	if (!Ball || !PassProfile->ReadBallMaxKickSpeed(Ball, MaxKickSpeed) || !PassProfile->ComputeFreePassVelocity(Direction, MaxKickSpeed, Velocity, PassProfile->GetChargeSpeedMultiplier(Charge)))
 	{
 		return false;
 	}
-	return FirePass(nullptr, Velocity);
+	return FirePass(nullptr, Velocity, Charge);
 }
 
 void UWB_PlayerCommandComponent::SetFacingDirection(FVector WorldDirection)

@@ -425,21 +425,12 @@ bool UWB_TeamRosterComponent::SwitchOrPass(APlayerController* PlayerController)
 
 	if (Commands && Commands->IsHoldingBall())
 	{
-		const UWB_BallDribbleComponent* Dribble = Pawn->FindComponentByClass<UWB_BallDribbleComponent>();
-		AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
-		// Aim assist and free pass: see UWB_PassProfile::bUseAimAssist. Receiver is None after a free pass.
-		APawn* Receiver = nullptr;
-		if (!Commands->RequestDirectionalPass(Direction, Receiver))
+		// Charged pass (UWB_PassProfile::bUseChargedPass): the press starts the charge, ReleaseSwitchOrPass sends the pass.
+		if (Commands->BeginPassCharge())
 		{
-			return false;
+			return true;
 		}
-		LastSwitchTimes.Add(PlayerController, Now);
-		// The passer takes the receiver when it catches the ball (HandleBallPossessionChanged). A receiver driven by another human only gets the ball.
-		if (Ball && Receiver && Cast<AWB_SoccerAIController_Base>(Receiver->GetController()))
-		{
-			PendingPasses.Add({ PlayerController, Receiver, Ball });
-		}
-		return true;
+		return PassToward(PlayerController, Pawn, Commands, Direction, 0.f);
 	}
 
 	APawn* Target = UWB_TeamLibrary::FindDirectionalAlly(Pawn, Direction, true);
@@ -448,6 +439,43 @@ bool UWB_TeamRosterComponent::SwitchOrPass(APlayerController* PlayerController)
 		return false;
 	}
 	LastSwitchTimes.Add(PlayerController, Now);
+	return true;
+}
+
+bool UWB_TeamRosterComponent::ReleaseSwitchOrPass(APlayerController* PlayerController)
+{
+	APawn* Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+	UWB_PlayerCommandComponent* Commands = Pawn ? Pawn->FindComponentByClass<UWB_PlayerCommandComponent>() : nullptr;
+	if (!Commands || !Commands->IsChargingPass())
+	{
+		return false;
+	}
+	const float Charge = Commands->GetPassCharge();
+	Commands->CancelPassCharge();
+	// The ball was lost during the charge (Dash, steal): nothing to pass.
+	if (!bBuilt || !HasProfile() || !Commands->IsHoldingBall())
+	{
+		return false;
+	}
+	return PassToward(PlayerController, Pawn, Commands, Pawn->GetLastMovementInputVector(), Charge);
+}
+
+bool UWB_TeamRosterComponent::PassToward(APlayerController* PlayerController, APawn* Pawn, UWB_PlayerCommandComponent* Commands, const FVector& Direction, float Charge)
+{
+	const UWB_BallDribbleComponent* Dribble = Pawn->FindComponentByClass<UWB_BallDribbleComponent>();
+	AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
+	// Aim assist and free pass: see UWB_PassProfile::bUseAimAssist. Receiver is None after a free pass.
+	APawn* Receiver = nullptr;
+	if (!Commands->RequestDirectionalPass(Direction, Receiver, Charge))
+	{
+		return false;
+	}
+	LastSwitchTimes.Add(PlayerController, GetWorld()->GetTimeSeconds());
+	// The passer takes the receiver when it catches the ball (HandleBallPossessionChanged). A receiver driven by another human only gets the ball.
+	if (Ball && Receiver && Cast<AWB_SoccerAIController_Base>(Receiver->GetController()))
+	{
+		PendingPasses.Add({ PlayerController, Receiver, Ball });
+	}
 	return true;
 }
 

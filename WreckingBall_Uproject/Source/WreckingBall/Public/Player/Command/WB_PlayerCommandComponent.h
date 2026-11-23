@@ -61,19 +61,38 @@ public:
 	 * Refused when the owner does not hold the ball or is not Free (charging a kick, Dashing...). Returns true when the ball left the owner.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
-	bool RequestPass(APawn* Receiver);
+	bool RequestPass(APawn* Receiver, float Charge = 0.f);
 
 	/**
 	 * Passes the dribbled ball in Direction (world, flat; zero: the owner's facing). PassProfile->bUseAimAssist on: to the teammate within
 	 * AimAssistAngle of Direction, else a free pass along Direction (OutReceiver None). Off: to the teammate best aligned with Direction.
-	 * Same refusals as RequestPass. Returns true when the ball left the owner.
+	 * Same refusals as RequestPass. Charge (0..1, charged pass): faster pass and, when strong, a small lift (PassProfile). Returns true when the ball left the owner.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
-	bool RequestDirectionalPass(FVector Direction, APawn*& OutReceiver);
+	bool RequestDirectionalPass(FVector Direction, APawn*& OutReceiver, float Charge = 0.f);
 
-	/** Flat ball velocity (cm/s) of a pass from the dribbled ball to Receiver (PassProfile). False when the owner dribbles no ball or a setting is missing. */
+	/**
+	 * Flat ball velocity (cm/s) of a pass from the dribbled ball to Receiver (PassProfile), at Charge (0..1, speed only, no lift).
+	 * False when the owner dribbles no ball or a setting is missing.
+	 */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Pass", meta = (ReturnDisplayName = "Valid"))
-	bool ComputePassVelocity(APawn* Receiver, FVector& OutVelocity) const;
+	bool ComputePassVelocity(APawn* Receiver, FVector& OutVelocity, float Charge = 0.f) const;
+
+	/** Starts charging a pass (PassProfile->bUseChargedPass, owner holds the ball and is Free). Returns true when the charge started. */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
+	bool BeginPassCharge();
+
+	/** Stops the pass charge without passing. Safe when not charging. */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand|Pass")
+	void CancelPassCharge();
+
+	/** True between BeginPassCharge and the release (or the cancel). */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Pass")
+	bool IsChargingPass() const { return bChargingPass; }
+
+	/** Charge (0..1) of the pass being charged, from the hold time (PassProfile->GetChargeFromHoldTime). 0 when not charging. For the UI. */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand|Pass")
+	float GetPassCharge() const;
 
 	/** True while the owner holds the ball (Player.Holding.Ball). */
 	UFUNCTION(BlueprintPure, Category = "PlayerCommand")
@@ -176,8 +195,12 @@ private:
 	/** True when PassProfile is set (warns once otherwise). */
 	bool HasPassProfile() const;
 
-	/** Turns the owner toward Velocity, fires OnPassCommand and records the pass for the receiver (UWB_BallPossessionSubsystem::MarkBallPassed). */
-	bool FirePass(APawn* Receiver, const FVector& Velocity);
+	/** Adds the lift of Charge (PassProfile->ApplyPassLoft), turns the owner toward Velocity, fires OnPassCommand and records the pass for the receiver (MarkBallPassed). */
+	bool FirePass(APawn* Receiver, const FVector& Velocity, float Charge);
+
+	/** Pass charge in progress (BeginPassCharge) and its start time. */
+	bool bChargingPass = false;
+	double PassChargeStartTime = 0.0;
 
 	/** Missing PassProfile already reported. */
 	mutable bool bWarnedNoPassProfile = false;

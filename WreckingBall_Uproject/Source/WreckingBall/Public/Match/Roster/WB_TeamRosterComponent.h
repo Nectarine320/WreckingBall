@@ -8,6 +8,7 @@ class AWB_SoccerAIController_Base;
 class AWB_TeamSpawnPoint;
 class APlayerController;
 class UWB_TeamRosterProfile;
+class UWB_PlayerCommandComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FWB_OnRosterCharacterAdded, APawn*, Character, int32, TeamIndex, int32, PlaceIndex);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnRosterCharacterRemoving, APawn*, Character);
@@ -88,6 +89,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "TeamRoster")
 	bool SwitchOrPass(APlayerController* PlayerController);
 
+	/**
+	 * Release of the switch / pass button (charged pass, UWB_PassProfile::bUseChargedPass): sends the pass charged since SwitchOrPass,
+	 * toward the stick at release, faster the longer the button was held. Does nothing when no pass is charging. Returns true when a pass left.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TeamRoster")
+	bool ReleaseSwitchOrPass(APlayerController* PlayerController);
+
 	/** Gives Target (a teammate driven by a bot) to PlayerController; the bot takes the character PlayerController leaves, which keeps its state. Returns true on success. */
 	UFUNCTION(BlueprintCallable, Category = "TeamRoster")
 	bool SwitchToCharacter(APlayerController* PlayerController, APawn* Target);
@@ -136,6 +144,9 @@ protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
+	/** Passes the ball of Pawn toward Direction at Charge (RequestDirectionalPass), then records the switch time and the pending pass to a bot. */
+	bool PassToward(APlayerController* PlayerController, APawn* Pawn, UWB_PlayerCommandComponent* Commands, const FVector& Direction, float Charge);
+
 	/** A pass of a human toward a bot teammate, waiting for the receiver to catch the ball. */
 	struct FPendingPass
 	{
