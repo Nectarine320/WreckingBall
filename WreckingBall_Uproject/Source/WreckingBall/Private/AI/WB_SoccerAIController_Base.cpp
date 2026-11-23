@@ -92,6 +92,11 @@ int32 AWB_SoccerAIController_Base::GetTeamIndex() const
 	return UWB_TeamLibrary::GetTeamOf(GetPawn());
 }
 
+void AWB_SoccerAIController_Base::ResetDashCooldown()
+{
+	NextDashTime = 0.0;
+}
+
 void AWB_SoccerAIController_Base::SetBrainPaused(bool bPaused)
 {
 	bBrainPaused = bPaused;
@@ -1261,7 +1266,7 @@ bool AWB_SoccerAIController_Base::IsBreakable(const AActor* Actor)
 bool AWB_SoccerAIController_Base::CanDashNow() const
 {
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	return Profile && Commands && PlayerStateComp && GetWorld()->GetTimeSeconds() >= NextDashTime
+	return Profile && Commands && PlayerStateComp && GetWorld()->GetTimeSeconds() >= NextBreachDashTime
 		&& PlayerStateComp->CanEnterState(WBTags::Player_State_Dashing) && !Commands->IsExhausted()
 		&& Commands->GetEnergyPercent() >= Commands->GetDashEnergyCost() + Profile->DashEnergyReserve;
 }
@@ -1389,7 +1394,7 @@ void AWB_SoccerAIController_Base::TickBreach(ACharacter* Me)
 	Commands->SetFacingDirection(Direction);
 	if (CanDashNow())
 	{
-		NextDashTime = Now + Profile->DashCooldown;
+		NextBreachDashTime = Now + Profile->BreachDashCooldown;
 		Commands->Dash();
 	}
 }

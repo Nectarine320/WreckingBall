@@ -1,6 +1,7 @@
 #include "Player/Hit/WB_PlayerHitComponent.h"
 
 #include "Animation/AnimSequenceBase.h"
+#include "Ball/Dribble/WB_BallDribbleComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
@@ -74,7 +75,7 @@ bool UWB_PlayerHitComponent::IsInPostDownGrace() const
 	return World && World->GetTimeSeconds() < GraceEndTime;
 }
 
-bool UWB_PlayerHitComponent::CanBeHitBy(AActor* Source) const
+bool UWB_PlayerHitComponent::CanBeHitBy(AActor* Source, bool bAllowFriendlyFire) const
 {
 	AActor* Owner = GetOwner();
 	if (!PlayerState || !IsValid(Source) || !Owner || Source == Owner)
@@ -107,7 +108,7 @@ bool UWB_PlayerHitComponent::CanBeHitBy(AActor* Source) const
 		{
 			return false;
 		}
-		if (!Profile->bFriendlyFire && TeamIndex >= 0)
+		if (!bAllowFriendlyFire && TeamIndex >= 0)
 		{
 			const UWB_PlayerHitComponent* OtherHit = Responsible->FindComponentByClass<UWB_PlayerHitComponent>();
 			if (OtherHit && OtherHit->TeamIndex == TeamIndex)
@@ -140,7 +141,7 @@ bool UWB_PlayerHitComponent::ReceiveThrownHit(AActor* Source, FVector ImpactVelo
 	{
 		return false;
 	}
-	if (ImpactVelocity.Size() < Profile->StunMinImpactSpeed || !CanBeHitBy(Source))
+	if (ImpactVelocity.Size() < Profile->StunMinImpactSpeed || !CanBeHitBy(Source, Profile->bFriendlyFire))
 	{
 		return false;
 	}
@@ -163,16 +164,37 @@ bool UWB_PlayerHitComponent::ReceiveThrownHit(AActor* Source, FVector ImpactVelo
 
 bool UWB_PlayerHitComponent::CanBeDashedBy(AActor* Dasher) const
 {
-	return CanBeHitBy(Dasher) && PlayerState->CanEnterState(WBTags::Player_State_Down);
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	return Profile && CanBeHitBy(Dasher, Profile->bDashFriendlyFire) && PlayerState->CanEnterState(WBTags::Player_State_Down);
 }
 
-bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
+bool UWB_PlayerHitComponent::ReceiveDashHitAndSteal(AActor* Dasher, FVector Direction, AActor*& OutStolenBall)
 {
-	if (!CanBeHitBy(Dasher))
+	OutStolenBall = nullptr;
+	// Read before the hit: the knocked player drops the ball while ReceiveDashHit runs (OnHitReceived -> ForceDrop).
+	const UWB_BallDribbleComponent* Dribble = GetOwner() ? GetOwner()->FindComponentByClass<UWB_BallDribbleComponent>() : nullptr;
+	AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
+
+	if (!ReceiveDashHit(Dasher, Direction))
 	{
 		return false;
 	}
 	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	const UWB_PlayerStateComponent* DasherState = Dasher ? Dasher->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	if (Profile && Profile->bDashStealsBall && Ball && !(DasherState && DasherState->IsHoldingAnything()))
+	{
+		OutStolenBall = Ball;
+	}
+	return true;
+}
+
+bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
+{
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile || !CanBeHitBy(Dasher, Profile->bDashFriendlyFire))
+	{
+		return false;
+	}
 
 	// Sideways bump: perpendicular to the Dash, toward the side of the Dash line where this player stands.
 	// The dasher runs through (BP_GenericCharacter ignores the victim), so a push along the Dash would put the victim back in its way.
@@ -194,11 +216,11 @@ bool UWB_PlayerHitComponent::ReceiveDashHit(AActor* Dasher, FVector Direction)
 
 bool UWB_PlayerHitComponent::ReceiveSlamHit(AActor* Source, FVector PushDirection)
 {
-	if (!CanBeHitBy(Source))
+	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
+	if (!Profile || !CanBeHitBy(Source, Profile->bSlamFriendlyFire))
 	{
 		return false;
 	}
-	const UWB_PlayerHitProfile* Profile = GetActiveHitProfile();
 	FVector Push = PushDirection.GetSafeNormal2D();
 	if (Push.IsNearlyZero() && Source)
 	{

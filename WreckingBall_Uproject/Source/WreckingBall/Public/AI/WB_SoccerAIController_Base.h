@@ -76,6 +76,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "SoccerAI")
 	bool bBrainPaused = false;
 
+	/** Makes the Dash on a player available at once (DashCooldown restarts at the next Dash). Called by the match roster after a goal (ResetCharactersToPlaces). */
+	UFUNCTION(BlueprintCallable, Category = "SoccerAI")
+	void ResetDashCooldown();
+
 	/** Pauses or resumes the bot brain (bBrainPaused). A paused bot stops moving at once. */
 	UFUNCTION(BlueprintCallable, Category = "SoccerAI")
 	void SetBrainPaused(bool bPaused);
@@ -195,7 +199,11 @@ private:
 	FVector PathTarget = FVector::ZeroVector;
 	double NextRepathTime = 0.0;
 
+	/** Earliest time of the next Dash on a player (DashCooldown). */
 	double NextDashTime = 0.0;
+
+	/** Earliest time of the next breach Dash into a wall (BreachDashCooldown). */
+	double NextBreachDashTime = 0.0;
 
 	/** Predicted target position of the last EvaluateDash (debug). */
 	FVector LastDashAimPoint = FVector::ZeroVector;
@@ -284,7 +292,7 @@ private:
 	/** True when Actor can be broken by the bots: a Geometry Collection (destructible wall) or a locked door. */
 	static bool IsBreakable(const AActor* Actor);
 
-	/** True when the bot may Dash now (cooldown, state, energy), like EvaluateDash without a target. */
+	/** True when the bot may Dash into a breach wall now (BreachDashCooldown, state, energy). */
 	bool CanDashNow() const;
 
 	/** Chases Target (predicted spot) and Dashes on it when EvaluateDash allows it; steps back when too close for the run-up. */

@@ -380,7 +380,13 @@ void UWB_TeamRosterComponent::ResetCharactersToPlaces()
 	FindSpawnPoints(SpawnPoints[0], SpawnPoints[1]);
 	for (const FRosterEntry& Entry : Entries)
 	{
-		PlaceCharacter(Entry.Character.Get(), Entry.TeamIndex, Entry.PlaceIndex, SpawnPoints[Entry.TeamIndex]);
+		APawn* Character = Entry.Character.Get();
+		PlaceCharacter(Character, Entry.TeamIndex, Entry.PlaceIndex, SpawnPoints[Entry.TeamIndex]);
+		// After a goal, every bot may Dash on a player again at once.
+		if (AWB_SoccerAIController_Base* Bot = Character ? Cast<AWB_SoccerAIController_Base>(Character->GetController()) : nullptr)
+		{
+			Bot->ResetDashCooldown();
+		}
 	}
 }
 

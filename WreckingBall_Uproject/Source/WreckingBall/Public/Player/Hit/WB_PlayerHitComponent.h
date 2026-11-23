@@ -70,6 +70,13 @@ public:
 	bool ReceiveDashHit(AActor* Dasher, FVector Direction);
 
 	/**
+	 * ReceiveDashHit, plus the ball steal (HitProfile->bDashStealsBall): OutStolenBall is the ball this player dribbled before the hit, when the Dash
+	 * knocked it Down and Dasher holds nothing. The Blueprint of the dasher then catches it (CatchBall). None otherwise. Returns true when knocked Down.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerHit", meta = (ReturnDisplayName = "KnockedDown"))
+	bool ReceiveDashHitAndSteal(AActor* Dasher, FVector Direction, AActor*& OutStolenBall);
+
+	/**
 	 * A slammed door (or another swinging object) hit this player: same Down as ReceiveDashHit (state, landing timer, grace, OnHitReceived),
 	 * but the player is pushed along PushDirection (the way the door moves), with the profile SlamKnockbackStrength / SlamKnockbackUpStrength.
 	 * Same rules (friendly fire, cooldown, grace, state table): a player already Down is not knocked Down again. Returns true when knocked Down.
@@ -140,8 +147,8 @@ private:
 	/** Game time until which the player cannot be hit (post-Down grace). */
 	double GraceEndTime = -1.0;
 
-	/** Common rules of both hit types: valid state component, not self, friendly fire, cooldown, grace. */
-	bool CanBeHitBy(AActor* Source) const;
+	/** Common rules of every hit type: valid state component, not self, cooldown, grace, and friendly fire (bAllowFriendlyFire: the flag of that hit type). */
+	bool CanBeHitBy(AActor* Source, bool bAllowFriendlyFire) const;
 
 	/** Records Source for HitCooldown. */
 	void RegisterHit(AActor* Source);

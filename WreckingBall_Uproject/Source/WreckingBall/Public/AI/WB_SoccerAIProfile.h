@@ -112,9 +112,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash")
 	bool bDashAimAtTargetLocation = false;
 
-	/** Seconds between two Dash attempts of the bot. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0"))
+	/** Seconds between two Dashes of the bot on a player. Ready again at once after a goal (the match reset calls ResetDashCooldown). The wall breach uses BreachDashCooldown. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", Units = "Seconds"))
 	float DashCooldown = 2.5f;
+
+	/** Seconds between two Dashes of the bot into a wall it breaks through (bAllowBreach). Separate from DashCooldown. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Dash", meta = (ClampMin = "0", Units = "Seconds"))
+	float BreachDashCooldown = 2.5f;
 
 	// ---- Shoot ----
 

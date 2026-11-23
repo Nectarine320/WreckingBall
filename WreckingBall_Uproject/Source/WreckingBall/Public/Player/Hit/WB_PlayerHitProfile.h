@@ -69,9 +69,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Rules", meta = (ClampMin = "0", Units = "Seconds"))
 	float HitCooldown = 0.5f;
 
-	/** True (default): a teammate's thrown object or Dash can stun or knock Down the player. False: hits from the same team are ignored. A player is never hit by their own thrown object. */
+	/** Thrown objects (ball included). True (default): a teammate's thrown object can stun the player. False: ignored. A player is never hit by their own thrown object. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Rules")
 	bool bFriendlyFire = true;
+
+	/** Dash. True (default): a teammate's Dash can knock the player Down. False: the dasher runs through the teammate, no hit. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Rules")
+	bool bDashFriendlyFire = true;
+
+	/** Slammed door (or another swinging object). True (default): a door slammed by a teammate can knock the player Down. False: ignored. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Rules")
+	bool bSlamFriendlyFire = true;
+
+	/**
+	 * On: a Dash that knocks a ball carrier Down always takes the ball: the dasher catches it at once (ReceiveDashHitAndSteal), unless it already
+	 * holds something. Off (default): the knocked player only drops the ball (DropSpeed), anyone can pick it up.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Rules")
+	bool bDashStealsBall = false;
 
 	/** Horizontal speed in cm/s given to the held object (or ball) dropped when the player is stunned or knocked Down, along the hit direction. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerHit|Drop", meta = (ClampMin = "0", Units = "CentimetersPerSecond"))
