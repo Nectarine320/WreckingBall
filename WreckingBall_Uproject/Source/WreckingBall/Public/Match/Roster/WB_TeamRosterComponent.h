@@ -80,6 +80,15 @@ public:
 	void ResetCharactersToPlaces();
 
 	/**
+	 * Restart after the ball went out of bounds: moves every character to its kickoff place, the whole formation shifted so that
+	 * the kickoff ball location (BP_KickoffPoint) lands on BallLocation, then stops it. Each place is put back on the NavMesh
+	 * (else on the floor below), so a shifted place that falls in a wall or outside the arena still gets a reachable spot.
+	 * Characters keep their kickoff facing.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TeamRoster")
+	void ResetCharactersAroundBall(FVector BallLocation);
+
+	/**
 	 * The switch / pass button of PlayerController. Without the ball: takes the teammate bot pointed by the stick (nearest when the stick is at rest).
 	 * With the ball: passes toward the stick (UWB_PlayerCommandComponent::RequestDirectionalPass: aim assist, or a free pass); when a bot drives the receiver, PlayerController takes it as soon as it catches the ball
 	 * (the pass is cancelled if someone else catches it first). Pressed again while the pass travels: takes the receiver at once.
@@ -201,8 +210,14 @@ private:
 	/** Fallback place: side by side on a circle around the origin, on the team's own half, projected on the NavMesh, facing the center. */
 	void ComputeFallbackPlace(int32 TeamIndex, int32 PlaceIndex, FVector& OutFloor, FRotator& OutRotation) const;
 
-	/** Teleports Character to a place and stops it. */
-	void PlaceCharacter(APawn* Character, int32 TeamIndex, int32 PlaceIndex, const AWB_TeamSpawnPoint* SpawnPoint) const;
+	/** Teleports Character to a place and stops it. Offset (flat) shifts the place; a shifted place is put back on the NavMesh or the floor. */
+	void PlaceCharacter(APawn* Character, int32 TeamIndex, int32 PlaceIndex, const AWB_TeamSpawnPoint* SpawnPoint, const FVector& Offset = FVector::ZeroVector) const;
+
+	/** Moves Point onto the NavMesh (search box SideExtent wide), else onto the floor below it. Returns false when neither was found (Point unchanged). */
+	bool ProjectToFloor(FVector& Point, float SideExtent) const;
+
+	/** Moves every character to its place (shifted by Offset) and resets the bots' Dash cooldown. */
+	void PlaceAllCharacters(const FVector& Offset);
 
 	/** Spawn point of each team (warning when a team has none, or too few places). */
 	void FindSpawnPoints(AWB_TeamSpawnPoint*& OutRed, AWB_TeamSpawnPoint*& OutBlue) const;

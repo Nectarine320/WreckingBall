@@ -318,36 +318,45 @@ void UWB_TeamRosterComponent::ComputeFallbackPlace(int32 TeamIndex, int32 PlaceI
 	const float Angle = FMath::Atan2(Side.Y, Side.X) + (PlaceIndex - (PerTeam - 1) * 0.5f) * (Spacing / FMath::Max(Radius, 1.f));
 	FVector Point(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, 0.f);
 
-	bool bOnFloor = false;
-	if (const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
-	{
-		FNavLocation Projected;
-		// Search box: half the spacing sideways (neighbours stay apart), tall enough for a floor that is not at Z = 0. Technical value.
-		if (NavSys->ProjectPointToNavigation(Point, Projected, FVector(Spacing * 0.5f, Spacing * 0.5f, 2000.f)))
-		{
-			Point = Projected.Location;
-			bOnFloor = true;
-		}
-	}
-	if (!bOnFloor)
-	{
-		// No NavMesh there: the floor below the point (Visibility, the gym floors are WorldDynamic). Search height: technical value.
-		FHitResult Hit;
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(WBRosterFallbackFloor), false);
-		for (const APawn* Character : GetRosterCharacters())
-		{
-			Params.AddIgnoredActor(Character);
-		}
-		if (GetWorld()->LineTraceSingleByChannel(Hit, Point + FVector(0.f, 0.f, 2000.f), Point - FVector(0.f, 0.f, 2000.f), ECC_Visibility, Params))
-		{
-			Point = Hit.ImpactPoint;
-		}
-	}
+	// Search box: half the spacing sideways, so neighbours stay apart.
+	ProjectToFloor(Point, Spacing * 0.5f);
 	OutFloor = Point;
 	OutRotation = FRotator(0.f, (-FVector(Point.X, Point.Y, 0.f)).Rotation().Yaw, 0.f);
 }
 
-void UWB_TeamRosterComponent::PlaceCharacter(APawn* Character, int32 TeamIndex, int32 PlaceIndex, const AWB_TeamSpawnPoint* SpawnPoint) const
+bool UWB_TeamRosterComponent::ProjectToFloor(FVector& Point, float SideExtent) const
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	if (const UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World))
+	{
+		FNavLocation Projected;
+		// Search box tall enough for a floor that is not at the point's height. Technical value.
+		if (NavSys->ProjectPointToNavigation(Point, Projected, FVector(SideExtent, SideExtent, 2000.f)))
+		{
+			Point = Projected.Location;
+			return true;
+		}
+	}
+	// No NavMesh there: the floor below the point (Visibility, the gym floors are WorldDynamic). Search height: technical value.
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(WBRosterPlaceFloor), false);
+	for (const APawn* Character : GetRosterCharacters())
+	{
+		Params.AddIgnoredActor(Character);
+	}
+	if (World->LineTraceSingleByChannel(Hit, Point + FVector(0.f, 0.f, 2000.f), Point - FVector(0.f, 0.f, 2000.f), ECC_Visibility, Params))
+	{
+		Point = Hit.ImpactPoint;
+		return true;
+	}
+	return false;
+}
+
+void UWB_TeamRosterComponent::PlaceCharacter(APawn* Character, int32 TeamIndex, int32 PlaceIndex, const AWB_TeamSpawnPoint* SpawnPoint, const FVector& Offset) const
 {
 	if (!Character)
 	{
@@ -356,6 +365,16 @@ void UWB_TeamRosterComponent::PlaceCharacter(APawn* Character, int32 TeamIndex, 
 	FVector Floor;
 	FRotator Rotation;
 	ComputePlace(TeamIndex, PlaceIndex, SpawnPoint, Floor, Rotation);
+	if (!Offset.IsNearlyZero())
+	{
+		Floor += Offset;
+		// Half the fallback spacing sideways keeps neighbours apart when the shifted place is pushed back on the NavMesh.
+		const float SideExtent = HasProfile() ? RosterProfile->FallbackSpacing * 0.5f : 50.f;
+		if (!ProjectToFloor(Floor, SideExtent))
+		{
+			UE_LOG(LogWBTeamRoster, Warning, TEXT("ResetCharactersAroundBall: no NavMesh nor floor under the shifted place of %s, it is placed without floor check."), *GetNameSafe(Character));
+		}
+	}
 
 	ACharacter* AsCharacter = Cast<ACharacter>(Character);
 	const float HalfHeight = AsCharacter && AsCharacter->GetCapsuleComponent() ? AsCharacter->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() : 0.f;
@@ -372,6 +391,18 @@ void UWB_TeamRosterComponent::PlaceCharacter(APawn* Character, int32 TeamIndex, 
 
 void UWB_TeamRosterComponent::ResetCharactersToPlaces()
 {
+	PlaceAllCharacters(FVector::ZeroVector);
+}
+
+void UWB_TeamRosterComponent::ResetCharactersAroundBall(FVector BallLocation)
+{
+	FVector Offset = BallLocation - AWB_TeamSpawnPoint::GetKickoffBallLocation(this, -1);
+	Offset.Z = 0.f;
+	PlaceAllCharacters(Offset);
+}
+
+void UWB_TeamRosterComponent::PlaceAllCharacters(const FVector& Offset)
+{
 	if (!bBuilt)
 	{
 		return;
@@ -381,8 +412,8 @@ void UWB_TeamRosterComponent::ResetCharactersToPlaces()
 	for (const FRosterEntry& Entry : Entries)
 	{
 		APawn* Character = Entry.Character.Get();
-		PlaceCharacter(Character, Entry.TeamIndex, Entry.PlaceIndex, SpawnPoints[Entry.TeamIndex]);
-		// After a goal, every bot may Dash on a player again at once.
+		PlaceCharacter(Character, Entry.TeamIndex, Entry.PlaceIndex, SpawnPoints[Entry.TeamIndex], Offset);
+		// After a goal or a ball out, every bot may Dash on a player again at once.
 		if (AWB_SoccerAIController_Base* Bot = Character ? Cast<AWB_SoccerAIController_Base>(Character->GetController()) : nullptr)
 		{
 			Bot->ResetDashCooldown();
