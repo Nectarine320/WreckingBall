@@ -105,6 +105,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
 	static APawn* GetPassReceiver(const UObject* WorldContextObject, const AActor* Ball);
 
+	/**
+	 * Adds Ball to the list of the balls of the level (call once, at the ball BeginPlay). The AI, the team coordinator and the dive read
+	 * this list instead of searching the level. A destroyed ball leaves the list by itself.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
+	static void RegisterBall(const UObject* WorldContextObject, AActor* Ball);
+
+	/** Balls of the level registered by RegisterBall and still alive. OutBalls is emptied first. */
+	UFUNCTION(BlueprintPure, Category = "BallPossession", meta = (WorldContext = "WorldContextObject"))
+	static void GetRegisteredBalls(const UObject* WorldContextObject, TArray<AActor*>& OutBalls);
+
 	/** Records Player as the dribbler of Ball (called by UWB_BallDribbleComponent::StartDribble). Ends the pass Ball was on. */
 	static void SetBallDribbler(const UObject* WorldContextObject, AActor* Ball, AActor* Player);
 
@@ -141,6 +152,9 @@ private:
 
 	/** Ball -> pass it is travelling on. */
 	TMap<TWeakObjectPtr<AActor>, FWB_BallPassRecord> Passes;
+
+	/** Balls of the level (RegisterBall). Destroyed balls are pruned each frame. */
+	TArray<TWeakObjectPtr<AActor>> Balls;
 
 	void TickTrails();
 

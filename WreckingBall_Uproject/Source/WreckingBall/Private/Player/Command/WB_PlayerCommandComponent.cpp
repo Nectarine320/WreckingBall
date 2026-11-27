@@ -63,8 +63,7 @@ void UWB_PlayerCommandComponent::DashWithCharge(float Charge)
 
 bool UWB_PlayerCommandComponent::CanStartDash() const
 {
-	const AActor* Owner = GetOwner();
-	const UWB_PlayerStateComponent* State = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	const UWB_PlayerStateComponent* State = GetOwnerPlayerState();
 	return State && State->CanEnterState(WBTags::Player_State_Dashing) && !IsExhausted();
 }
 
@@ -145,8 +144,7 @@ void UWB_PlayerCommandComponent::StartChargeTick()
 
 void UWB_PlayerCommandComponent::SetChargeRing(float Percent) const
 {
-	AActor* Owner = GetOwner();
-	if (UWB_GroundRingComponent* Ring = Owner ? Owner->FindComponentByClass<UWB_GroundRingComponent>() : nullptr)
+	if (UWB_GroundRingComponent* Ring = GetOwnerGroundRing())
 	{
 		Ring->SetKickPercent(Percent);
 	}
@@ -191,8 +189,7 @@ void UWB_PlayerCommandComponent::KickRelease()
 
 bool UWB_PlayerCommandComponent::IsHoldingBall() const
 {
-	const AActor* Owner = GetOwner();
-	const UWB_PlayerStateComponent* State = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	const UWB_PlayerStateComponent* State = GetOwnerPlayerState();
 	return State && State->CurrentHolding.MatchesTag(WBTags::Player_Holding_Ball);
 }
 
@@ -204,7 +201,7 @@ bool UWB_PlayerCommandComponent::ComputePassVelocity(APawn* Receiver, FVector& O
 	{
 		return false;
 	}
-	const UWB_BallDribbleComponent* Dribble = Owner->FindComponentByClass<UWB_BallDribbleComponent>();
+	const UWB_BallDribbleComponent* Dribble = GetOwnerDribble();
 	const AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
 	if (!Ball)
 	{
@@ -239,14 +236,14 @@ bool UWB_PlayerCommandComponent::CanPassNow() const
 	{
 		return false;
 	}
-	const UWB_PlayerStateComponent* State = Owner->FindComponentByClass<UWB_PlayerStateComponent>();
+	const UWB_PlayerStateComponent* State = GetOwnerPlayerState();
 	return State && State->IsInState(WBTags::Player_State_Free);
 }
 
 bool UWB_PlayerCommandComponent::FirePass(APawn* Receiver, const FVector& FlatVelocity, float Charge)
 {
 	AActor* Owner = GetOwner();
-	const UWB_BallDribbleComponent* Dribble = Owner ? Owner->FindComponentByClass<UWB_BallDribbleComponent>() : nullptr;
+	const UWB_BallDribbleComponent* Dribble = GetOwnerDribble();
 	AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
 
 	bChargingPass = false;
@@ -348,7 +345,7 @@ bool UWB_PlayerCommandComponent::RequestDirectionalPass(FVector Direction, APawn
 	}
 
 	// Free pass along the stick.
-	const UWB_BallDribbleComponent* Dribble = Owner->FindComponentByClass<UWB_BallDribbleComponent>();
+	const UWB_BallDribbleComponent* Dribble = GetOwnerDribble();
 	const AActor* Ball = Dribble ? Dribble->GetDribbledBall() : nullptr;
 	float MaxKickSpeed = 0.f;
 	FVector Velocity;
@@ -452,8 +449,7 @@ bool UWB_PlayerCommandComponent::IsExhausted() const
 
 float UWB_PlayerCommandComponent::GetDashEnergyCost() const
 {
-	const AActor* Owner = GetOwner();
-	const UWB_PlayerStateComponent* State = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	const UWB_PlayerStateComponent* State = GetOwnerPlayerState();
 	const UWB_PlayerEnergyProfile* Energy = State ? State->GetActiveEnergyProfile() : nullptr;
 	return Energy ? Energy->DashEnergyCost : 1.f;
 }
@@ -484,4 +480,34 @@ float UWB_PlayerCommandComponent::GetDashMinRunUp() const
 {
 	const UWB_PlayerDashProfile* Profile = GetDashProfile();
 	return Profile ? Profile->DashMinRunUpDistancePlayer : 0.f;
+}
+
+UWB_PlayerStateComponent* UWB_PlayerCommandComponent::GetOwnerPlayerState() const
+{
+	if (!CachedPlayerState.IsValid())
+	{
+		const AActor* Owner = GetOwner();
+		CachedPlayerState = Owner ? Owner->FindComponentByClass<UWB_PlayerStateComponent>() : nullptr;
+	}
+	return CachedPlayerState.Get();
+}
+
+UWB_BallDribbleComponent* UWB_PlayerCommandComponent::GetOwnerDribble() const
+{
+	if (!CachedDribble.IsValid())
+	{
+		const AActor* Owner = GetOwner();
+		CachedDribble = Owner ? Owner->FindComponentByClass<UWB_BallDribbleComponent>() : nullptr;
+	}
+	return CachedDribble.Get();
+}
+
+UWB_GroundRingComponent* UWB_PlayerCommandComponent::GetOwnerGroundRing() const
+{
+	if (!CachedGroundRing.IsValid())
+	{
+		const AActor* Owner = GetOwner();
+		CachedGroundRing = Owner ? Owner->FindComponentByClass<UWB_GroundRingComponent>() : nullptr;
+	}
+	return CachedGroundRing.Get();
 }

@@ -88,6 +88,30 @@ UWB_BallPossessionSubsystem* UWB_BallPossessionSubsystem::Get(const UObject* Wor
 	return World ? World->GetSubsystem<UWB_BallPossessionSubsystem>() : nullptr;
 }
 
+void UWB_BallPossessionSubsystem::RegisterBall(const UObject* WorldContextObject, AActor* Ball)
+{
+	UWB_BallPossessionSubsystem* Self = Get(WorldContextObject);
+	if (Self && IsValid(Ball))
+	{
+		Self->Balls.AddUnique(Ball);
+	}
+}
+
+void UWB_BallPossessionSubsystem::GetRegisteredBalls(const UObject* WorldContextObject, TArray<AActor*>& OutBalls)
+{
+	OutBalls.Reset();
+	if (const UWB_BallPossessionSubsystem* Self = Get(WorldContextObject))
+	{
+		for (const TWeakObjectPtr<AActor>& Ball : Self->Balls)
+		{
+			if (AActor* Actor = Ball.Get())
+			{
+				OutBalls.Add(Actor);
+			}
+		}
+	}
+}
+
 UPrimitiveComponent* UWB_BallPossessionSubsystem::FindBallBody(const AActor* Ball)
 {
 	if (!Ball)
@@ -301,6 +325,8 @@ void UWB_BallPossessionSubsystem::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	TickTrails();
+
+	Balls.RemoveAllSwap([](const TWeakObjectPtr<AActor>& Ball) { return !Ball.IsValid(); });
 
 	for (auto It = Dribblers.CreateIterator(); It; ++It)
 	{

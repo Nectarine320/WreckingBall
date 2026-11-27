@@ -169,10 +169,16 @@ AActor* UWB_TeamCoordinatorComponent::GetBall()
 	NextBallSearchTime = Now + AIProfile->BallSearchInterval;
 	if (UClass* BallClass = AIProfile->BallClass.LoadSynchronous())
 	{
-		for (TActorIterator<AActor> It(GetWorld(), BallClass); It; ++It)
+		// The balls register themselves in the possession subsystem (BeginPlay of BP_PO_Master_Ball_01).
+		TArray<AActor*> Balls;
+		UWB_BallPossessionSubsystem::GetRegisteredBalls(this, Balls);
+		for (AActor* Ball : Balls)
 		{
-			CachedBall = *It;
-			break;
+			if (Ball->IsA(BallClass))
+			{
+				CachedBall = Ball;
+				break;
+			}
 		}
 	}
 	return CachedBall.Get();

@@ -7,6 +7,9 @@
 class UWB_PlayerDashProfile;
 class UWB_KickProfile;
 class UWB_PassProfile;
+class UWB_PlayerStateComponent;
+class UWB_BallDribbleComponent;
+class UWB_GroundRingComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnMoveCommand, float, XAxis, float, YAxis);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FWB_OnPlayerCommand);
@@ -236,6 +239,20 @@ public:
 
 private:
 	bool bMoving = false;
+
+	/** Components of the owner, found once (read by the charge Tick and the pass and Dash checks). */
+	mutable TWeakObjectPtr<UWB_PlayerStateComponent> CachedPlayerState;
+	mutable TWeakObjectPtr<UWB_BallDribbleComponent> CachedDribble;
+	mutable TWeakObjectPtr<UWB_GroundRingComponent> CachedGroundRing;
+
+	/** UWB_PlayerStateComponent of the owner (searched once, then cached). */
+	UWB_PlayerStateComponent* GetOwnerPlayerState() const;
+
+	/** UWB_BallDribbleComponent of the owner (searched once, then cached). */
+	UWB_BallDribbleComponent* GetOwnerDribble() const;
+
+	/** UWB_GroundRingComponent of the owner (searched once, then cached). */
+	UWB_GroundRingComponent* GetOwnerGroundRing() const;
 
 	/** Reads a float (or integer) variable of the owner by name. False (and a warning once) when it is missing. */
 	bool ReadOwnerNumber(FName Variable, float& OutValue) const;

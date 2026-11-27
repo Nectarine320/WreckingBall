@@ -96,13 +96,20 @@ UPrimitiveComponent* UWB_PlayerDiveComponent::FindClosestBall(const FVector& Fro
 	}
 	UPrimitiveComponent* Best = nullptr;
 	float BestDistSq = FMath::Square(MaxDistance);
-	for (TActorIterator<AActor> It(World, Profile->BallClass); It; ++It)
+	// The balls register themselves in the possession subsystem (BeginPlay of BP_PO_Master_Ball_01).
+	TArray<AActor*> Balls;
+	UWB_BallPossessionSubsystem::GetRegisteredBalls(World, Balls);
+	for (AActor* Ball : Balls)
 	{
+		if (!Ball->IsA(Profile->BallClass))
+		{
+			continue;
+		}
 		// Kicked or not: a held ball (not simulated) counts too, at its root.
-		UPrimitiveComponent* Body = FindBallBody(*It);
+		UPrimitiveComponent* Body = FindBallBody(Ball);
 		if (!Body)
 		{
-			Body = Cast<UPrimitiveComponent>(It->GetRootComponent());
+			Body = Cast<UPrimitiveComponent>(Ball->GetRootComponent());
 		}
 		if (!Body)
 		{

@@ -200,6 +200,10 @@ private:
 	TWeakObjectPtr<AActor> CachedBall;
 	double NextBallSearchTime = 0.0;
 
+	/** Result of FindBallCarrier, computed once per frame (GFrameCounter of CarrierFrame): it is asked several times per Tick. */
+	mutable TWeakObjectPtr<APawn> CachedCarrier;
+	mutable uint64 CarrierFrame = MAX_uint64;
+
 	/** Current path (world points) toward PathTarget, and the index of the point being followed. */
 	TArray<FVector> PathPoints;
 	int32 PathIndex = 0;
@@ -265,8 +269,11 @@ private:
 	 */
 	FVector GetPassInterceptPoint(const ACharacter* Me, const FVector& BallLocation, const FVector& BallVelocity) const;
 
-	/** Score (cm) of an open spot for a pass from Carrier: see SupportOpenLaneWeight in the profile. */
-	float ScoreSupportSpot(const FVector& CarrierLocation, const FVector& Spot, const FVector& Forward) const;
+	/** Score (cm) of an open spot for a pass from Carrier: see SupportOpenLaneWeight in the profile. OpponentLocations: from GatherOpponentLocations. */
+	float ScoreSupportSpot(const FVector& CarrierLocation, const FVector& Spot, const FVector& Forward, const TArray<FVector>& OpponentLocations) const;
+
+	/** Locations of the opponent players (pawns with a UWB_PlayerStateComponent), gathered once before scoring the open spots. */
+	void GatherOpponentLocations(TArray<FVector>& OutLocations) const;
 
 	/** World point of open spot Index on the circle around CarrierLocation (snapped on the NavMesh when possible). */
 	FVector GetSupportSpot(const FVector& CarrierLocation, int32 Index) const;

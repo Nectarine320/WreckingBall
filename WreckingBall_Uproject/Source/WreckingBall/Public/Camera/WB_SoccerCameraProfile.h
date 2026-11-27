@@ -82,8 +82,9 @@ public:
 	 * Ball free: the ball. Ball held: the middle of the ball and its carrier, moved so it sits in the screen third opposite to where the carrier goes.
 	 * CameraView: the camera component (gives the screen axes). LastCarrierDirection: the OutCarrierDirection of the previous frame (keep it in a variable).
 	 * OutCarrierDirection: the smoothed direction (CarrierDirectionSmoothing), shorter than 1 while it turns; zero when the ball is free.
+	 * Not pure on purpose: a pure node feeding two nodes would run twice per frame (and ease the direction twice).
 	 */
-	UFUNCTION(BlueprintCallable, Category = "Camera", meta = (ReturnDisplayName = "Target"))
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Camera", meta = (ReturnDisplayName = "Target"))
 	FVector ComputeCameraTarget(const AActor* Ball, const USceneComponent* CameraView, FVector LastCarrierDirection, FVector& OutCarrierDirection) const;
 
 	/**

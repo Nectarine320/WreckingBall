@@ -200,6 +200,14 @@ void AWB_SoccerAIController_Base::SetTeamRole(EWB_SoccerRole InRole, EWB_TeamSit
 
 APawn* AWB_SoccerAIController_Base::FindBallCarrier() const
 {
+	// Asked several times per Tick (intent, roles, support...): the search runs once per frame.
+	if (CarrierFrame == GFrameCounter)
+	{
+		return CachedCarrier.Get();
+	}
+	CarrierFrame = GFrameCounter;
+	CachedCarrier.Reset();
+
 	UWorld* World = GetWorld();
 	if (!World)
 	{
@@ -209,10 +217,11 @@ APawn* AWB_SoccerAIController_Base::FindBallCarrier() const
 	{
 		if (IsHoldingBall(It->FindComponentByClass<UWB_PlayerStateComponent>()))
 		{
-			return *It;
+			CachedCarrier = *It;
+			break;
 		}
 	}
-	return nullptr;
+	return CachedCarrier.Get();
 }
 
 void AWB_SoccerAIController_Base::OnPossess(APawn* InPawn)
@@ -440,15 +449,22 @@ void AWB_SoccerAIController_Base::RefreshBall(const ACharacter* Me)
 		return;
 	}
 
+	// The balls register themselves in the possession subsystem (BeginPlay of BP_PO_Master_Ball_01): no search through the level.
+	TArray<AActor*> Balls;
+	UWB_BallPossessionSubsystem::GetRegisteredBalls(this, Balls);
 	AActor* Best = nullptr;
 	double BestDistSq = TNumericLimits<double>::Max();
-	for (TActorIterator<AActor> It(GetWorld(), BallClass); It; ++It)
+	for (AActor* Ball : Balls)
 	{
-		const double DistSq = FVector::DistSquared(It->GetActorLocation(), Me->GetActorLocation());
+		if (!Ball->IsA(BallClass))
+		{
+			continue;
+		}
+		const double DistSq = FVector::DistSquared(Ball->GetActorLocation(), Me->GetActorLocation());
 		if (DistSq < BestDistSq)
 		{
 			BestDistSq = DistSq;
-			Best = *It;
+			Best = Ball;
 		}
 	}
 	CachedBall = Best;
@@ -1087,18 +1103,25 @@ FVector AWB_SoccerAIController_Base::GetSupportSpot(const FVector& CarrierLocati
 	return Spot;
 }
 
-float AWB_SoccerAIController_Base::ScoreSupportSpot(const FVector& CarrierLocation, const FVector& Spot, const FVector& Forward) const
+void AWB_SoccerAIController_Base::GatherOpponentLocations(TArray<FVector>& OutLocations) const
+{
+	OutLocations.Reset();
+	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
+	{
+		if (*It != GetPawn() && It->FindComponentByClass<UWB_PlayerStateComponent>() && IsOpponent(*It))
+		{
+			OutLocations.Add(It->GetActorLocation());
+		}
+	}
+}
+
+float AWB_SoccerAIController_Base::ScoreSupportSpot(const FVector& CarrierLocation, const FVector& Spot, const FVector& Forward, const TArray<FVector>& OpponentLocations) const
 {
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
 	float NearestOpponent = Profile->SupportOpenDistance * 2.f;
 	float NearestToLane = Profile->SupportOpenDistance;
-	for (TActorIterator<APawn> It(GetWorld()); It; ++It)
+	for (const FVector& Location : OpponentLocations)
 	{
-		if (*It == GetPawn() || !It->FindComponentByClass<UWB_PlayerStateComponent>() || !IsOpponent(*It))
-		{
-			continue;
-		}
-		const FVector Location = It->GetActorLocation();
 		NearestOpponent = FMath::Min(NearestOpponent, static_cast<float>(FVector::Dist2D(Location, Spot)));
 		const FVector OnLane = FMath::ClosestPointOnSegment(Location, CarrierLocation, Spot);
 		NearestToLane = FMath::Min(NearestToLane, static_cast<float>(FVector::Dist2D(Location, OnLane)));
@@ -1141,12 +1164,14 @@ void AWB_SoccerAIController_Base::TickSupportOpen(ACharacter* Me, float DeltaSec
 	if (SupportSpotIndex < 0 || Now >= NextSupportSpotTime)
 	{
 		NextSupportSpotTime = Now + Profile->SupportOpenInterval;
+		TArray<FVector> OpponentLocations;
+		GatherOpponentLocations(OpponentLocations);
 		int32 BestIndex = -1;
 		float BestScore = -TNumericLimits<float>::Max();
 		float CurrentScore = -TNumericLimits<float>::Max();
 		for (int32 Index = 0; Index < Profile->SupportOpenSampleCount; ++Index)
 		{
-			const float Score = ScoreSupportSpot(CarrierLocation, GetSupportSpot(CarrierLocation, Index), Forward);
+			const float Score = ScoreSupportSpot(CarrierLocation, GetSupportSpot(CarrierLocation, Index), Forward, OpponentLocations);
 			if (Index == SupportSpotIndex)
 			{
 				CurrentScore = Score;

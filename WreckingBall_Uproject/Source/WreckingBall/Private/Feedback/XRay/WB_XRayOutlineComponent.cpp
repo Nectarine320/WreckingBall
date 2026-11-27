@@ -204,9 +204,16 @@ bool UWB_XRayOutlineComponent::ComputeOccluded(bool& bOutValid) const
 		}
 	}
 
+	const int32 Needed = FMath::Max(1, FMath::CeilToInt(Points.Num() * FMath::Clamp(Profile->OccludedRatio, 0.01f, 1.f)));
 	int32 BlockedCount = 0;
-	for (const FVector& Point : Points)
+	for (int32 PointIndex = 0; PointIndex < Points.Num(); ++PointIndex)
 	{
+		// The verdict is known: enough points hidden, or too few left to reach Needed. The debug draw still traces every point.
+		if (!bDebugDrawTraces && (BlockedCount >= Needed || BlockedCount + (Points.Num() - PointIndex) < Needed))
+		{
+			break;
+		}
+		const FVector& Point = Points[PointIndex];
 		FHitResult Hit;
 		bool bBlocked = false;
 		FCollisionQueryParams PointParams = Params;
@@ -233,7 +240,6 @@ bool UWB_XRayOutlineComponent::ComputeOccluded(bool& bOutValid) const
 	}
 
 	bOutValid = true;
-	const int32 Needed = FMath::Max(1, FMath::CeilToInt(Points.Num() * FMath::Clamp(Profile->OccludedRatio, 0.01f, 1.f)));
 	return BlockedCount >= Needed;
 }
 
