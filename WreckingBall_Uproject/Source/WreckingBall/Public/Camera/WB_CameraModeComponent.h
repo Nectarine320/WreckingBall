@@ -36,7 +36,7 @@ public:
 	FGameplayTag GetCameraMode() const;
 
 	/**
-	 * Sets the start mode of the map, by priority: the DefaultCameraMode of the active gym (GM_Gym), else GameModeDefault
+	 * Sets the start mode of the map, by priority: the debug console variable WB.StartWithPlayer1Camera (WB Tools > Gym Mode, not in shipping), the DefaultCameraMode of the active gym (GM_Gym), else GameModeDefault
 	 * (DefaultCameraMode of BP_SoccerGamemode), else Camera.Mode.Ball. Call once from BP_SoccerCamera BeginPlay.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Camera|Mode")

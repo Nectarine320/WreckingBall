@@ -59,13 +59,18 @@ Jeu de soccer en multijoueur local, de 2 à 4 joueurs, dans des lieux improvisé
     - `00_GameModeSettings` : réglages de partie (`BP_GymSettings`…) ;
     - `01_Goal` : les buts ;
     - puis d'autres sous-dossiers (`02_Camera`, `03_Spawn`, `04_PlayArea`…) pour les réglages de caméra, le spawn des équipes, le spawner manager, les volumes de play area, etc.
+  - `02_Light` : l'éclairage et le post-process.
+    - `01_Lighting` : lumières, Sky Light, Sky Atmosphere, brouillard… ;
+    - `02_PostProcess` : le Post Process Volume.
+  - `99_Unsorted` : ce que l'outil Sort Level (WB Tools) ne sait pas ranger. Il reste dans son niveau, avec un avertissement : à ranger à la main.
 - **Sous-niveaux** : un dossier de l'Outliner correspond à un sous-niveau.
   - `SubLv_<Map>_Layout` contient tout ce qui est dans `00_Layout`. Un ancien sous-niveau `_LD` se renomme `_Layout` (propose-le à l'utilisateur quand tu en vois un).
   - `SubLv_<Map>_Gameplay` contient tout ce qui est dans `01_Gameplay`.
-  - `SubLv_<Map>_Light` contient l'éclairage et le Post Process Volume.
+  - `SubLv_<Map>_Light` contient tout ce qui est dans `02_Light`.
   - D'autres sous-niveaux pourront s'ajouter.
 - **Exception** : ce qui choisit le mode de jeu (`BP_GymSettings`) reste dans le **niveau persistant**, rangé dans le dossier `01_Gameplay/00_GameModeSettings`.
-- Quand tu places un acteur par MCP, range-le tout de suite dans le bon dossier et le bon sous-niveau.
+- Les acteurs groupés (Group Actor) ne sont pas déplacés par Sort Level : ils sont recensés dans le log.
+- Quand tu places un acteur par MCP, range-le tout de suite dans le bon dossier et le bon sous-niveau (outil Sort Level du toolset WB Tools quand il est disponible).
 
 ## Façon de travailler
 - Une conversation par chantier ou par lot. Commit Git avant et après chaque lot. L'utilisateur teste à la fin de chaque lot.

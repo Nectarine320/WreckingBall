@@ -5,18 +5,26 @@
 #include "ToolsetRegistry/UToolsetRegistry.h"
 
 #include "Retarget/WB_RetargetToolset.h"
+#include "Tools/Gym/WB_GymSelectorLibrary.h"
+#include "Tools/Menu/WB_ToolsMenu.h"
+#include "Tools/WB_ToolsToolset.h"
 
-/** Editor module of Wrecking Ball: registers the project's MCP toolsets. */
+/** Editor module of Wrecking Ball: registers the project's MCP toolsets and the WB Tools editor menu. */
 class FWreckingBallEditorModule : public IModuleInterface
 {
 public:
 	virtual void StartupModule() override
 	{
 		UToolsetRegistry::RegisterToolsetClass(UWB_RetargetToolset::StaticClass());
+		UToolsetRegistry::RegisterToolsetClass(UWB_ToolsToolset::StaticClass());
+		FWB_ToolsMenu::Register();
+		UWB_GymSelectorLibrary::ApplyPlayer1CameraPreference();
 	}
 
 	virtual void ShutdownModule() override
 	{
+		FWB_ToolsMenu::Unregister();
+		UToolsetRegistry::UnregisterToolsetClass(UWB_ToolsToolset::StaticClass());
 		UToolsetRegistry::UnregisterToolsetClass(UWB_RetargetToolset::StaticClass());
 	}
 };

@@ -19,7 +19,12 @@ public class WreckingBallEditor : ModuleRules
 		PublicDependencyModuleNames.AddRange(new string[] { "IKRig", "IKRigEditor" });
 		PrivateDependencyModuleNames.AddRange(new string[] { "UnrealEd", "AssetTools", "AssetRegistry", "EditorScriptingUtilities" });
 
-		// IKRigEditor headers (retargeter controller) pull Slate widget classes.
+		// IKRigEditor headers (retargeter controller) pull Slate widget classes. Also used by the WB Tools panels.
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
+
+		// WB Tools (devis wb-tools): the game module (gym classes, team spawn point), the editor main menu,
+		// the project settings, Editor Utility Widgets, Blueprint graph nodes, Enhanced Input and the clipboard.
+		PublicDependencyModuleNames.AddRange(new string[] { "WreckingBall", "DeveloperSettings", "GameplayTags" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "ToolMenus", "Blutility", "UMG", "UMGEditor", "BlueprintGraph", "EnhancedInput", "InputCore", "ApplicationCore" });
 	}
 }

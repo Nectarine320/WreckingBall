@@ -19,6 +19,15 @@ namespace
 		return Mode.MatchesTagExact(WBTags::Camera_Mode_Ball) || Mode.MatchesTagExact(WBTags::Camera_Mode_Player1);
 	}
 
+#if !UE_BUILD_SHIPPING
+	// Set by WB Tools > Gym Mode > "Camera Player 1" (personal editor preference, never saved in a map).
+	TAutoConsoleVariable<bool> CVarStartWithPlayer1Camera(
+		TEXT("WB.StartWithPlayer1Camera"),
+		false,
+		TEXT("Debug: true starts every map with the Player 1 camera (any GameMode), above the gym and GameMode settings. Set from WB Tools > Gym Mode > Camera Player 1."),
+		ECVF_Cheat);
+#endif
+
 	// Temporary debug command (devis gym-camera-p1, lot 4): remove it once the debug menu calls SetCameraMode.
 	FAutoConsoleCommandWithWorldAndArgs GCameraModeCommand(
 		TEXT("WB.CameraMode"),
@@ -82,6 +91,13 @@ void UWB_CameraModeComponent::SetCameraMode(FGameplayTag ModeTag)
 void UWB_CameraModeComponent::ApplyStartMode(FGameplayTag GameModeDefault)
 {
 	FGameplayTag Mode;
+#if !UE_BUILD_SHIPPING
+	if (CVarStartWithPlayer1Camera.GetValueOnGameThread())
+	{
+		SetCameraMode(WBTags::Camera_Mode_Player1);
+		return;
+	}
+#endif
 	if (const UWB_GymDirectorComponent* Gym = UWB_GymDirectorComponent::GetGymDirector(this))
 	{
 		Mode = Gym->GetDefaultCameraMode();
