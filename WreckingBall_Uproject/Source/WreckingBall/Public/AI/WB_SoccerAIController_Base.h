@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AIController.h"
+#include "GameplayTagContainer.h"
 #include "AI/Team/WB_SoccerTeamTypes.h"
 #include "WB_SoccerAIController_Base.generated.h"
 
@@ -39,7 +40,11 @@ enum class EWB_SoccerAIIntent : uint8
 	/** Team roles, Defender while the team holds the ball: stand in an open spot near the carrier (free pass lane), sometimes ahead of the ball. */
 	SupportOpen,
 	/** A teammate passed the ball to this bot (AIProfile->bReceivePasses): run to the first point of the ball's path it reaches in time, face the ball and walk into it. */
-	ReceivePass
+	ReceivePass,
+	/** Forced role Aggressive, holding the ball: never shoots, keeps about AggressiveKeepAwayDistance from the nearest opponent (moves away when it comes closer). */
+	KeepAway,
+	/** Forced role Goalkeeper, holding the ball: turns toward the opponent goal and clears the ball forward (short charged kick). */
+	ClearBall
 };
 
 /**
@@ -102,6 +107,14 @@ public:
 	/** Called by the team coordinator at each evaluation. InPressTarget: the opponent this bot must press (None when it does not press). */
 	UFUNCTION(BlueprintCallable, Category = "SoccerAI|Team")
 	void SetTeamRole(EWB_SoccerRole InRole, EWB_TeamSituation InSituation, APawn* InPressTarget);
+
+	/**
+	 * Forced role of the possessed character (AI.ForcedRole.*), read from its place in the roster composition (gyms). Empty: the normal team roles.
+	 * A forced role comes before the coordinator: Goalkeeper always guards its goal (no LastMan), claims the ball in its zone and clears it;
+	 * Aggressive goes for the free ball, presses the opponent carrier, and with the ball keeps away from the nearest opponent without shooting.
+	 */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Team")
+	FGameplayTag GetForcedRole() const;
 
 	/** Opponent this bot presses (given by the coordinator). None when it does not press. */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI|Team")
@@ -250,6 +263,15 @@ private:
 	void TickGuardGoal(ACharacter* Me, float DeltaSeconds);
 	void TickLastMan(ACharacter* Me, float DeltaSeconds);
 	void TickSupportOpen(ACharacter* Me, float DeltaSeconds);
+
+	/** Intent of a forced role (GetForcedRole). False when the bot has none (or an unknown one): the normal choice applies. */
+	bool ChooseForcedIntent(const FGameplayTag& ForcedRole, EWB_SoccerAIIntent& OutIntent);
+
+	/** KeepAway: moves away from the nearest opponent while it is nearer than AggressiveKeepAwayDistance, else holds and faces it. */
+	void TickKeepAway(ACharacter* Me, float DeltaSeconds);
+
+	/** ClearBall: turns toward the opponent goal, then a charged kick of GoalkeeperClearChargeTime. */
+	void TickClearBall(ACharacter* Me, float DeltaSeconds);
 
 	/** Ball passed to this bot (bReceivePasses), refreshed by ChooseIntent. */
 	TWeakObjectPtr<AActor> IncomingPassBall;

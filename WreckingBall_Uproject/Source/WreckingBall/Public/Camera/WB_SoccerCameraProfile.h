@@ -4,6 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "WB_SoccerCameraProfile.generated.h"
 
+class APawn;
 class UCameraComponent;
 class USpringArmComponent;
 
@@ -88,9 +89,21 @@ public:
 	FVector ComputeCameraTarget(const AActor* Ball, const USceneComponent* CameraView, FVector LastCarrierDirection, FVector& OutCarrierDirection) const;
 
 	/**
+	 * Camera.Mode.Player1: point the camera should frame this frame to follow Player (call every tick, then interpolate toward it with BallFollowSpeed).
+	 * Same walk-direction offset as the ball carrier (Camera|Carrier settings): Player sits in the screen third opposite to where it goes.
+	 * LastDirection / OutDirection: as in ComputeCameraTarget (keep OutDirection in a variable). Player empty: returns zero.
+	 */
+	UFUNCTION(BlueprintCallable, BlueprintPure = false, Category = "Camera", meta = (ReturnDisplayName = "Target"))
+	FVector ComputePlayerCameraTarget(const APawn* Player, const USceneComponent* CameraView, FVector LastDirection, FVector& OutDirection) const;
+
+	/**
 	 * Applies the framing and lag settings of Profile to the spring arm and the camera (call from the Construction Script).
 	 * Profile empty: a warning is logged and nothing is changed. Returns true when applied.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Camera", meta = (ReturnDisplayName = "Applied"))
 	static bool ApplyCameraProfile(const UWB_SoccerCameraProfile* Profile, USpringArmComponent* SpringArm, UCameraComponent* Camera);
+
+private:
+	/** Shared framing: Anchor moved toward the screen third opposite to where Mover goes (its eased flat direction, see CarrierDirectionSmoothing). */
+	FVector ComputeWalkFraming(const FVector& Anchor, const AActor* Mover, const USceneComponent* CameraView, FVector LastDirection, FVector& OutDirection) const;
 };

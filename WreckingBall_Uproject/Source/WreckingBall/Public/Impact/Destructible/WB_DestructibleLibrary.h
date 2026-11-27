@@ -47,6 +47,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Destructible|Impact")
 	static FVector OrientNormalTowardSource(FVector Normal, FVector ImpactPoint, const AActor* Source);
 
+	/** True while the destructibles of this world take damage (UWB_DestructionSwitchSubsystem, on by default). Off in the gyms: BP_Destructible_Base refuses every impact. */
+	UFUNCTION(BlueprintPure, Category = "Destructible|Switch", meta = (WorldContext = "WorldContextObject"))
+	static bool IsDestructionEnabled(const UObject* WorldContextObject);
+
+	/** Turns the destruction of this world on or off (GM_Gym, from the gym DataAsset). */
+	UFUNCTION(BlueprintCallable, Category = "Destructible|Switch", meta = (WorldContext = "WorldContextObject"))
+	static void SetDestructionEnabled(const UObject* WorldContextObject, bool bEnabled);
+
 	/**
 	 * Returns the surface type of the wall side a hit lands on, for impact feedback: SideA's surface for side A (actor +Y), SideB's for side B (actor -Y).
 	 * Normal is the world-space impact normal, pointing toward the attacker (same side rule as GetSideFromNormal, MinSideDot 0.5).

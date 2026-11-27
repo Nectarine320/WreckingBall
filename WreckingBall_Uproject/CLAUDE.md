@@ -49,6 +49,24 @@ Jeu de soccer en multijoueur local, de 2 à 4 joueurs, dans des lieux improvisé
 - Plus de nouveaux enums **Blueprint** : utilise des Gameplay Tags (les toolsets MCP ne permettent pas à l'IA de créer des enums dans l'éditeur). Les enums existants restent.
 - En C++, un `UENUM(BlueprintType)` est permis pour un choix fixe et interne à une classe C++ (ex. un mode de calcul), avec une `Category`-équivalent clair et un commentaire `/** */` en anglais par valeur. Pour une catégorie de gameplay extensible (types d'objets, d'impacts…), garde les Gameplay Tags.
 
+## Maps : Outliner et sous-niveaux (décision de l'utilisateur, 2026-11-27)
+- **Dossiers de l'Outliner**, toujours les mêmes à la racine, numérotés :
+  - `00_Layout` : tout objet d'environnement qui meuble l'espace.
+    - `01_RoughBox` : la géométrie en static mesh (`_Cube` et pareils), avec des sous-dossiers par matériau au besoin ;
+    - `02_PhysicsActor` : les Blueprints de physics actors ;
+    - `03_Destructible` : les Blueprints destructibles (murs, pots, aquariums…).
+  - `01_Gameplay` : les éléments interactifs du jeu, chacun dans un sous-dossier descriptif numéroté.
+    - `00_GameModeSettings` : réglages de partie (`BP_GymSettings`…) ;
+    - `01_Goal` : les buts ;
+    - puis d'autres sous-dossiers (`02_Camera`, `03_Spawn`, `04_PlayArea`…) pour les réglages de caméra, le spawn des équipes, le spawner manager, les volumes de play area, etc.
+- **Sous-niveaux** : un dossier de l'Outliner correspond à un sous-niveau.
+  - `SubLv_<Map>_Layout` contient tout ce qui est dans `00_Layout`. Un ancien sous-niveau `_LD` se renomme `_Layout` (propose-le à l'utilisateur quand tu en vois un).
+  - `SubLv_<Map>_Gameplay` contient tout ce qui est dans `01_Gameplay`.
+  - `SubLv_<Map>_Light` contient l'éclairage et le Post Process Volume.
+  - D'autres sous-niveaux pourront s'ajouter.
+- **Exception** : ce qui choisit le mode de jeu (`BP_GymSettings`) reste dans le **niveau persistant**, rangé dans le dossier `01_Gameplay/00_GameModeSettings`.
+- Quand tu places un acteur par MCP, range-le tout de suite dans le bon dossier et le bon sous-niveau.
+
 ## Façon de travailler
 - Une conversation par chantier ou par lot. Commit Git avant et après chaque lot. L'utilisateur teste à la fin de chaque lot.
 - **Analyse d'un devis** : avant de commencer, pour chaque étape ou sous-lot, donne une ligne « **C++ ou Blueprint** » avec la raison (critères de la section C++) et ce que ça coûte (compilation éditeur fermé, création manuelle évitée…). Signale aussi les étapes qu'on peut fusionner ou redécouper. L'utilisateur tranche avant que tu commences.

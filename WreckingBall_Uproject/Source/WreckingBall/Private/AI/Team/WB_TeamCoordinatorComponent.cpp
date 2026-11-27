@@ -16,6 +16,7 @@
 #include "Player/State/WB_PlayerStateComponent.h"
 #include "Player/State/WB_PlayerStateTags.h"
 #include "TimerManager.h"
+#include "AI/WB_SoccerAITags.h"
 
 namespace
 {
@@ -265,11 +266,23 @@ void UWB_TeamCoordinatorComponent::EvaluateRoles(bool bIgnoreHoldTime)
 	const EWB_TeamSituation NewSituation = bTeamHasBall ? EWB_TeamSituation::Attacking : EWB_TeamSituation::Defending;
 	const UWB_TeamGoalComponent* OwnGoal = UWB_TeamGoalComponent::FindGoalDefendedBy(this, TeamIndex);
 
+	// Bots with a forced role (gyms) keep it: they are left out of the attribution below.
+	auto ForcedRoleOf = [](const APawn* Member)
+	{
+		const AWB_SoccerAIController_Base* Bot = GetBot(Member);
+		return Bot ? Bot->GetForcedRole() : FGameplayTag();
+	};
+	const TArray<APawn*> Free = Members.FilterByPredicate([&ForcedRoleOf](const APawn* Member) { return !ForcedRoleOf(Member).IsValid(); });
+	const bool bHasForcedGoalkeeper = Members.ContainsByPredicate([&ForcedRoleOf](const APawn* Member)
+	{
+		return ForcedRoleOf(Member).MatchesTagExact(WBTags::AI_ForcedRole_Goalkeeper);
+	});
+
 	// Members able to play first; everyone when nobody can.
-	TArray<APawn*> Able = Members.FilterByPredicate([](const APawn* Member) { return !IsIncapacitated(Member); });
+	TArray<APawn*> Able = Free.FilterByPredicate([](const APawn* Member) { return !IsIncapacitated(Member); });
 	if (Able.IsEmpty())
 	{
-		Able = Members;
+		Able = Free;
 	}
 
 	auto PreviousWithRole = [this](EWB_SoccerRole Role, double& OutSince) -> APawn*
@@ -289,7 +302,7 @@ void UWB_TeamCoordinatorComponent::EvaluateRoles(bool bIgnoreHoldTime)
 	APawn* Attacker = nullptr;
 	double AttackerSince = 0.0;
 	APawn* PreviousAttacker = PreviousWithRole(EWB_SoccerRole::Attacker, AttackerSince);
-	if (bTeamHasBall)
+	if (bTeamHasBall && Free.Contains(Carrier))
 	{
 		Attacker = Carrier;
 	}
@@ -300,17 +313,17 @@ void UWB_TeamCoordinatorComponent::EvaluateRoles(bool bIgnoreHoldTime)
 	}
 	else
 	{
-		Attacker = Members.Contains(PreviousAttacker) ? PreviousAttacker : (Able.IsEmpty() ? nullptr : Able[0]);
+		Attacker = Free.Contains(PreviousAttacker) ? PreviousAttacker : (Able.IsEmpty() ? nullptr : Able[0]);
 	}
 
 	// ---- Goalkeeper: the nearest to its goal among the others ----
 	APawn* Goalkeeper = nullptr;
-	if (OwnGoal)
+	if (OwnGoal && !bHasForcedGoalkeeper)
 	{
 		TArray<APawn*> Candidates = Able.FilterByPredicate([Attacker](const APawn* P) { return P != Attacker; });
 		if (Candidates.IsEmpty())
 		{
-			Candidates = Members.FilterByPredicate([Attacker](const APawn* P) { return P != Attacker; });
+			Candidates = Free.FilterByPredicate([Attacker](const APawn* P) { return P != Attacker; });
 		}
 		double GoalkeeperSince = 0.0;
 		APawn* PreviousGoalkeeper = PreviousWithRole(EWB_SoccerRole::Goalkeeper, GoalkeeperSince);
@@ -348,7 +361,20 @@ void UWB_TeamCoordinatorComponent::EvaluateRoles(bool bIgnoreHoldTime)
 	{
 		FWB_TeamRoleAssignment& Entry = NewAssignments.AddDefaulted_GetRef();
 		Entry.Member = Member;
-		Entry.Role = Member == Attacker ? EWB_SoccerRole::Attacker : (Member == Goalkeeper ? EWB_SoccerRole::Goalkeeper : EWB_SoccerRole::Defender);
+		const FGameplayTag Forced = ForcedRoleOf(Member);
+		if (Forced.MatchesTagExact(WBTags::AI_ForcedRole_Goalkeeper))
+		{
+			Entry.Role = EWB_SoccerRole::Goalkeeper;
+		}
+		else if (Forced.IsValid())
+		{
+			// Aggressive: goes for the ball like an Attacker, on its own (not counted as the team Attacker for the press rule).
+			Entry.Role = EWB_SoccerRole::Attacker;
+		}
+		else
+		{
+			Entry.Role = Member == Attacker ? EWB_SoccerRole::Attacker : (Member == Goalkeeper ? EWB_SoccerRole::Goalkeeper : EWB_SoccerRole::Defender);
+		}
 		const FWB_TeamRoleAssignment* Previous = FindPrevious(Member);
 		Entry.RoleSinceTime = (Previous && Previous->Role == Entry.Role) ? Previous->RoleSinceTime : Now;
 	}

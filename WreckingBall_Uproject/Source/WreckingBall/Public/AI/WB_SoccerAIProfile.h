@@ -310,6 +310,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0"))
 	float SupportAheadDuration = 2.5f;
 
+	// ---- Forced roles (gyms) ----
+
+	/** Forced role Aggressive (AI.ForcedRole.Aggressive), holding the ball: distance in cm it keeps from the nearest opponent (human or bot). It moves away while the opponent is nearer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Forced Roles", meta = (ClampMin = "0", Units = "Centimeters"))
+	float AggressiveKeepAwayDistance = 300.f;
+
+	/** Forced role Goalkeeper (AI.ForcedRole.Goalkeeper), holding the ball: charge time in seconds of its clearing kick toward the opponent goal. Longer = stronger. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Forced Roles", meta = (ClampMin = "0", Units = "Seconds"))
+	float GoalkeeperClearChargeTime = 0.4f;
+
 	// ---- Goalkeeper ----
 
 	/**

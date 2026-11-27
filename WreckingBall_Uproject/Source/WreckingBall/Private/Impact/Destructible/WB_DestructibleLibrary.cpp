@@ -7,6 +7,8 @@
 #include "GeometryCollection/GeometryCollectionComponent.h"
 #include "Impact/Budget/WB_PhysicsBudgetManager_Base.h"
 #include "Impact/Destructible/WB_DestructibleDependent.h"
+#include "Impact/Destructible/WB_DestructionSwitchSubsystem.h"
+#include "Engine/Engine.h"
 #include "Materials/MaterialInterface.h"
 #include "PhysicalMaterials/PhysicalMaterial.h"
 #include "TimerManager.h"
@@ -208,4 +210,21 @@ int32 UWB_DestructibleLibrary::NotifyDependentsDestroyed(AActor* Parent)
 		}
 	}
 	return Objects.Num();
+}
+
+bool UWB_DestructibleLibrary::IsDestructionEnabled(const UObject* WorldContextObject)
+{
+	const UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
+	const UWB_DestructionSwitchSubsystem* Switch = World ? World->GetSubsystem<UWB_DestructionSwitchSubsystem>() : nullptr;
+	// No subsystem (editor world, Construction Script): the destruction stays on, as in the match.
+	return !Switch || Switch->IsDestructionEnabled();
+}
+
+void UWB_DestructibleLibrary::SetDestructionEnabled(const UObject* WorldContextObject, bool bEnabled)
+{
+	const UWorld* World = GEngine ? GEngine->GetWorldFromContextObject(WorldContextObject, EGetWorldErrorMode::ReturnNull) : nullptr;
+	if (UWB_DestructionSwitchSubsystem* Switch = World ? World->GetSubsystem<UWB_DestructionSwitchSubsystem>() : nullptr)
+	{
+		Switch->SetDestructionEnabled(bEnabled);
+	}
 }

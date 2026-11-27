@@ -20,6 +20,7 @@
 #include "Match/WB_SoccerPlayerState.h"
 #include "Match/WB_TeamGoalComponent.h"
 #include "Match/WB_TeamLibrary.h"
+#include "Gym/WB_GymTags.h"
 #include "NavigationSystem.h"
 #include "Player/Command/WB_PlayerCommandComponent.h"
 
@@ -125,12 +126,47 @@ bool UWB_TeamRosterComponent::BuildRoster()
 		return true;
 	}
 
-	const int32 PerTeam = RosterProfile->PlayersPerTeam;
-	bBotsActive = RosterProfile->bStartBotsOnPlay;
+	bBotsActive = bUseSlotComposition ? bCompositionStartBotsOnPlay : RosterProfile->bStartBotsOnPlay;
 	Entries.Reset();
 
 	AWB_TeamSpawnPoint* SpawnPoints[NumTeams] = { nullptr, nullptr };
 	FindSpawnPoints(SpawnPoints[0], SpawnPoints[1]);
+
+	if (bUseSlotComposition)
+	{
+		BuildFromSlots(SpawnPoints);
+	}
+	else
+	{
+		BuildFromPlayersPerTeam(SpawnPoints);
+	}
+
+	Entries.StableSort([](const FRosterEntry& A, const FRosterEntry& B)
+	{
+		return A.TeamIndex != B.TeamIndex ? A.TeamIndex < B.TeamIndex : A.PlaceIndex < B.PlaceIndex;
+	});
+	bBuilt = true;
+
+	for (const FRosterEntry& Entry : Entries)
+	{
+		PlaceCharacter(Entry.Character.Get(), Entry.TeamIndex, Entry.PlaceIndex, SpawnPoints[Entry.TeamIndex]);
+	}
+	for (const FRosterEntry& Entry : Entries)
+	{
+		OnRosterCharacterAdded.Broadcast(Entry.Character.Get(), Entry.TeamIndex, Entry.PlaceIndex);
+	}
+
+	const FString Rule = bUseSlotComposition
+		? FString::Printf(TEXT("composition of %d places"), CompositionSlots.Num())
+		: FString::Printf(TEXT("%d per team"), RosterProfile->PlayersPerTeam);
+	UE_LOG(LogWBTeamRoster, Log, TEXT("BuildRoster: %d characters (%s), %d bot(s), bots %s."), Entries.Num(), *Rule, GetBotCount(), bBotsActive ? TEXT("on") : TEXT("off"));
+	return true;
+}
+
+void UWB_TeamRosterComponent::BuildFromPlayersPerTeam(AWB_TeamSpawnPoint* SpawnPoints[2])
+{
+	UWorld* World = GetWorld();
+	const int32 PerTeam = RosterProfile->PlayersPerTeam;
 
 	// Humans first, in ID order: they take the first places of their team.
 	int32 Taken[NumTeams] = { 0, 0 };
@@ -164,24 +200,211 @@ bool UWB_TeamRosterComponent::BuildRoster()
 			}
 		}
 	}
+}
 
-	Entries.StableSort([](const FRosterEntry& A, const FRosterEntry& B)
-	{
-		return A.TeamIndex != B.TeamIndex ? A.TeamIndex < B.TeamIndex : A.PlaceIndex < B.PlaceIndex;
-	});
-	bBuilt = true;
+void UWB_TeamRosterComponent::BuildFromSlots(AWB_TeamSpawnPoint* SpawnPoints[2])
+{
+	UWorld* World = GetWorld();
+	const int32 NumLocal = World->GetGameInstance() ? World->GetGameInstance()->GetNumLocalPlayers() : 0;
 
-	for (const FRosterEntry& Entry : Entries)
+	// Valid places only, split by control type.
+	TArray<int32> PlayerSlots;
+	TArray<int32> BotSlots;
+	for (int32 SlotIndex = 0; SlotIndex < CompositionSlots.Num(); ++SlotIndex)
 	{
-		PlaceCharacter(Entry.Character.Get(), Entry.TeamIndex, Entry.PlaceIndex, SpawnPoints[Entry.TeamIndex]);
+		const FWB_RosterSlot& Slot = CompositionSlots[SlotIndex];
+		if (Slot.Team < 0 || Slot.Team >= NumTeams)
+		{
+			UE_LOG(LogWBTeamRoster, Warning, TEXT("BuildRoster: place %d has team %d (0 or 1 expected), skipped."), SlotIndex, Slot.Team);
+			continue;
+		}
+		if (Slot.ControlType.MatchesTagExact(WBTags::Gym_Control_Player))
+		{
+			PlayerSlots.Add(SlotIndex);
+			continue;
+		}
+		if (!Slot.ControlType.MatchesTagExact(WBTags::Gym_Control_Bot))
+		{
+			UE_LOG(LogWBTeamRoster, Warning, TEXT("BuildRoster: place %d has no control type (Gym.Control.Player or Gym.Control.Bot), a bot takes it."), SlotIndex);
+		}
+		BotSlots.Add(SlotIndex);
 	}
-	for (const FRosterEntry& Entry : Entries)
+
+	// Humans in ID order on the Player places; a human without a place gets no character.
+	int32 NextPlayerSlot = 0;
+	for (int32 PlayerIndex = 0; PlayerIndex < NumLocal; ++PlayerIndex)
 	{
-		OnRosterCharacterAdded.Broadcast(Entry.Character.Get(), Entry.TeamIndex, Entry.PlaceIndex);
+		APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, PlayerIndex);
+		if (!PlayerController)
+		{
+			continue;
+		}
+		if (NextPlayerSlot >= PlayerSlots.Num())
+		{
+			UE_LOG(LogWBTeamRoster, Warning, TEXT("BuildRoster: no Player place left for player %d, it gets no character."), PlayerIndex + 1);
+			RemoveHumanPawn(PlayerController);
+			continue;
+		}
+		const int32 SlotIndex = PlayerSlots[NextPlayerSlot++];
+		const FWB_RosterSlot& Slot = CompositionSlots[SlotIndex];
+		const int32 PlaceIndex = Slot.SpawnPlace - 1;
+		FVector Floor;
+		FRotator Rotation;
+		ComputePlace(Slot.Team, PlaceIndex, SpawnPoints[Slot.Team], Floor, Rotation);
+		APawn* Pawn = EnsureHumanPawn(PlayerController, Floor, Rotation);
+		if (!Pawn)
+		{
+			continue;
+		}
+		// The place decides the team (the look follows the PlayerState team).
+		if (AWB_SoccerPlayerState* PlayerState = PlayerController->GetPlayerState<AWB_SoccerPlayerState>())
+		{
+			PlayerState->SetTeam(Slot.Team);
+		}
+		Entries.Add({ Pawn, Slot.Team, PlaceIndex, SlotIndex });
 	}
 
-	UE_LOG(LogWBTeamRoster, Log, TEXT("BuildRoster: %d characters (%d per team), %d bot(s), bots %s."), Entries.Num(), PerTeam, GetBotCount(), bBotsActive ? TEXT("on") : TEXT("off"));
+	// Player places left without a human: a bot takes them.
+	for (int32 i = NextPlayerSlot; i < PlayerSlots.Num(); ++i)
+	{
+		UE_LOG(LogWBTeamRoster, Warning, TEXT("BuildRoster: no local player for the Player place %d, a bot takes it."), PlayerSlots[i]);
+		BotSlots.Add(PlayerSlots[i]);
+	}
+	BotSlots.Sort();
+
+	for (const int32 SlotIndex : BotSlots)
+	{
+		const FWB_RosterSlot& Slot = CompositionSlots[SlotIndex];
+		if (APawn* Bot = SpawnBotCharacter(Slot.Team, Slot.SpawnPlace - 1, SpawnPoints[Slot.Team]))
+		{
+			Entries.Add({ Bot, Slot.Team, Slot.SpawnPlace - 1, SlotIndex });
+		}
+	}
+}
+
+APawn* UWB_TeamRosterComponent::EnsureHumanPawn(APlayerController* PlayerController, const FVector& Location, const FRotator& Rotation)
+{
+	if (APawn* Existing = PlayerController->GetPawn())
+	{
+		return Existing;
+	}
+	UWorld* World = GetWorld();
+	const AGameModeBase* GameMode = World ? World->GetAuthGameMode() : nullptr;
+	UClass* PawnClass = GameMode ? GameMode->DefaultPawnClass.Get() : nullptr;
+	if (!PawnClass)
+	{
+		UE_LOG(LogWBTeamRoster, Warning, TEXT("BuildRoster: the GameMode has no Default Pawn Class, no character for %s."), *PlayerController->GetName());
+		return nullptr;
+	}
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	// Spawned a bit above its place, then put exactly on it by PlaceCharacter.
+	APawn* Pawn = World->SpawnActor<APawn>(PawnClass, Location + FVector(0.f, 0.f, 100.f), Rotation, Params);
+	if (!Pawn)
+	{
+		return nullptr;
+	}
+	// The view stays on the shared match camera: possessing a pawn would otherwise move the view target to it.
+	AActor* ViewTarget = PlayerController->GetViewTarget();
+	PlayerController->Possess(Pawn);
+	if (ViewTarget && ViewTarget != PlayerController)
+	{
+		PlayerController->SetViewTarget(ViewTarget);
+	}
+	return Pawn;
+}
+
+void UWB_TeamRosterComponent::RemoveHumanPawn(APlayerController* PlayerController)
+{
+	APawn* Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+	if (!Pawn)
+	{
+		return;
+	}
+	AActor* ViewTarget = PlayerController->GetViewTarget();
+	OnRosterCharacterRemoving.Broadcast(Pawn);
+	PlayerController->UnPossess();
+	Pawn->Destroy();
+	if (IsValid(ViewTarget) && ViewTarget != Pawn)
+	{
+		PlayerController->SetViewTarget(ViewTarget);
+	}
+}
+
+// ---- Slot composition (gyms) ----
+
+void UWB_TeamRosterComponent::SetSlotComposition(const TArray<FWB_RosterSlot>& Slots, bool bInStartBotsOnPlay)
+{
+	CompositionSlots = Slots;
+	bCompositionStartBotsOnPlay = bInStartBotsOnPlay;
+	bUseSlotComposition = true;
+}
+
+void UWB_TeamRosterComponent::ClearSlotComposition()
+{
+	CompositionSlots.Reset();
+	bUseSlotComposition = false;
+}
+
+bool UWB_TeamRosterComponent::RebuildRoster()
+{
+	if (!HasProfile())
+	{
+		return false;
+	}
+	PendingPasses.Reset();
+	LastHumanHolders.Reset();
+	LastSwitchTimes.Reset();
+
+	// The bot characters leave the match; the humans keep their character (reused, or removed by BuildFromSlots).
+	const TArray<FRosterEntry> OldEntries = Entries;
+	Entries.Reset();
+	bBuilt = false;
+	for (const FRosterEntry& Entry : OldEntries)
+	{
+		APawn* Character = Entry.Character.Get();
+		AWB_SoccerAIController_Base* Bot = Character ? Cast<AWB_SoccerAIController_Base>(Character->GetController()) : nullptr;
+		if (!Bot)
+		{
+			continue;
+		}
+		OnRosterCharacterRemoving.Broadcast(Character);
+		Bot->UnPossess();
+		Bot->Destroy();
+		Character->Destroy();
+	}
+	return BuildRoster();
+}
+
+bool UWB_TeamRosterComponent::SetSlotForcedRole(int32 SlotIndex, FGameplayTag ForcedRole)
+{
+	if (!CompositionSlots.IsValidIndex(SlotIndex))
+	{
+		UE_LOG(LogWBTeamRoster, Warning, TEXT("SetSlotForcedRole: no place %d in the composition."), SlotIndex);
+		return false;
+	}
+	CompositionSlots[SlotIndex].ForcedRole = ForcedRole;
 	return true;
+}
+
+APawn* UWB_TeamRosterComponent::GetCharacterAtSlot(int32 SlotIndex) const
+{
+	if (SlotIndex == INDEX_NONE)
+	{
+		return nullptr;
+	}
+	const FRosterEntry* Entry = Entries.FindByPredicate([SlotIndex](const FRosterEntry& Item) { return Item.SlotIndex == SlotIndex; });
+	return Entry ? Entry->Character.Get() : nullptr;
+}
+
+FGameplayTag UWB_TeamRosterComponent::GetForcedRoleOf(const APawn* Character) const
+{
+	if (!bUseSlotComposition)
+	{
+		return FGameplayTag();
+	}
+	const FRosterEntry* Entry = FindEntry(Character);
+	return Entry && CompositionSlots.IsValidIndex(Entry->SlotIndex) ? CompositionSlots[Entry->SlotIndex].ForcedRole : FGameplayTag();
 }
 
 AWB_SoccerAIController_Base* UWB_TeamRosterComponent::SpawnBot(int32 TeamIndex, const FVector& Location, const FRotator& Rotation)

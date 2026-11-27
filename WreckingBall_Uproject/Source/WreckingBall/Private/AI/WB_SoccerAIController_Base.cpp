@@ -26,6 +26,8 @@
 #include "Player/Hit/WB_PlayerHitComponent.h"
 #include "Player/State/WB_PlayerStateComponent.h"
 #include "Player/State/WB_PlayerStateTags.h"
+#include "AI/WB_SoccerAITags.h"
+#include "Match/Roster/WB_TeamRosterComponent.h"
 
 namespace
 {
@@ -193,9 +195,128 @@ float AWB_SoccerAIController_Base::GetPerimeterDistance(const FVector& Direction
 
 void AWB_SoccerAIController_Base::SetTeamRole(EWB_SoccerRole InRole, EWB_TeamSituation InSituation, APawn* InPressTarget)
 {
-	CurrentRole = InRole;
 	TeamSituation = InSituation;
+	// A forced role comes before the coordinator (ChooseForcedIntent sets CurrentRole itself).
+	if (GetForcedRole().IsValid())
+	{
+		PressTarget.Reset();
+		return;
+	}
+	CurrentRole = InRole;
 	PressTarget = InPressTarget;
+}
+
+FGameplayTag AWB_SoccerAIController_Base::GetForcedRole() const
+{
+	const UWB_TeamRosterComponent* Roster = UWB_TeamRosterComponent::GetTeamRoster(this);
+	return Roster ? Roster->GetForcedRoleOf(GetPawn()) : FGameplayTag();
+}
+
+bool AWB_SoccerAIController_Base::ChooseForcedIntent(const FGameplayTag& ForcedRole, EWB_SoccerAIIntent& OutIntent)
+{
+	const bool bGoalkeeper = ForcedRole.MatchesTagExact(WBTags::AI_ForcedRole_Goalkeeper);
+	const bool bAggressive = ForcedRole.MatchesTagExact(WBTags::AI_ForcedRole_Aggressive);
+	if (!bGoalkeeper && !bAggressive)
+	{
+		return false;
+	}
+	CurrentRole = bGoalkeeper ? EWB_SoccerRole::Goalkeeper : EWB_SoccerRole::Attacker;
+	PressTarget.Reset();
+
+	if (IsHoldingBall(PlayerStateComp))
+	{
+		OutIntent = bGoalkeeper ? EWB_SoccerAIIntent::ClearBall : EWB_SoccerAIIntent::KeepAway;
+		return true;
+	}
+	if (PlayerStateComp && PlayerStateComp->IsHoldingAnything())
+	{
+		OutIntent = EWB_SoccerAIIntent::Attack;
+		return true;
+	}
+	if (RefreshIncomingPass() && IsIntentAllowed(EWB_SoccerAIIntent::ReceivePass))
+	{
+		OutIntent = EWB_SoccerAIIntent::ReceivePass;
+		return true;
+	}
+
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	if (bGoalkeeper)
+	{
+		// Never leaves its goal (no LastMan): guards it, and claims a free ball inside its zone.
+		OutIntent = EWB_SoccerAIIntent::GuardGoal;
+		if (Profile->bGoalkeeperClaimsBallInZone && CachedBall.IsValid() && !FindBallCarrier() && IsIntentAllowed(EWB_SoccerAIIntent::SeekBall))
+		{
+			const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone();
+			if (Zone && Zone->IsLocationInside(CachedBall->GetActorLocation()))
+			{
+				OutIntent = EWB_SoccerAIIntent::SeekBall;
+			}
+		}
+		return true;
+	}
+
+	// Aggressive: the free ball, else the opponent carrier (Dash to make it drop the ball).
+	if (const APawn* Carrier = FindBallCarrier())
+	{
+		OutIntent = IsOpponent(Carrier) ? EWB_SoccerAIIntent::ChaseCarrier : EWB_SoccerAIIntent::Support;
+		return true;
+	}
+	OutIntent = CachedBall.IsValid() ? EWB_SoccerAIIntent::SeekBall : EWB_SoccerAIIntent::Idle;
+	return true;
+}
+
+void AWB_SoccerAIController_Base::TickKeepAway(ACharacter* Me, float DeltaSeconds)
+{
+	TArray<FVector> Opponents;
+	GatherOpponentLocations(Opponents);
+	const FVector MyLocation = Me->GetActorLocation();
+	const FVector* Nearest = nullptr;
+	double NearestDistSq = TNumericLimits<double>::Max();
+	for (const FVector& Location : Opponents)
+	{
+		const double DistSq = FVector::DistSquared2D(Location, MyLocation);
+		if (DistSq < NearestDistSq)
+		{
+			NearestDistSq = DistSq;
+			Nearest = &Location;
+		}
+	}
+	if (!Nearest)
+	{
+		Commands->StopMoving();
+		return;
+	}
+	const float KeepDistance = GetActiveProfile()->AggressiveKeepAwayDistance;
+	const FVector Away = (MyLocation - *Nearest).GetSafeNormal2D();
+	if (FMath::Sqrt(NearestDistSq) < KeepDistance && !Away.IsNearlyZero())
+	{
+		// Run to the point KeepDistance away from the opponent, on the far side (the path goes around the walls).
+		MoveTowardLocation(Me, *Nearest + Away * KeepDistance);
+		return;
+	}
+	Commands->StopMoving();
+	TurnToward(Me, Away.IsNearlyZero() ? Me->GetActorForwardVector() : -Away, DeltaSeconds);
+}
+
+void AWB_SoccerAIController_Base::TickClearBall(ACharacter* Me, float DeltaSeconds)
+{
+	const UWB_TeamGoalComponent* Goal = GetGoalToAttack();
+	if (!Goal)
+	{
+		Commands->StopMoving();
+		return;
+	}
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	Commands->StopMoving();
+	// Same aim as a shot (toward the opponent goal, ShootAimJitter), then a short charged kick: TickCharge releases it.
+	const float Remaining = TurnToward(Me, GetShotDirection(Me, Goal), DeltaSeconds);
+	if (Remaining <= Profile->ShootAimTolerance && IsActionAllowed(Profile, Profile->bAllowShoot))
+	{
+		ChargeTarget = Profile->GoalkeeperClearChargeTime;
+		ChargeElapsed = 0.f;
+		bCharging = true;
+		Commands->KickPress();
+	}
 }
 
 APawn* AWB_SoccerAIController_Base::FindBallCarrier() const
@@ -278,6 +399,13 @@ void AWB_SoccerAIController_Base::ResetBrain()
 
 EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 {
+	// A forced role (gyms) comes before the coordinator and the legacy brain.
+	EWB_SoccerAIIntent ForcedIntent = EWB_SoccerAIIntent::Idle;
+	if (ChooseForcedIntent(GetForcedRole(), ForcedIntent))
+	{
+		return ForcedIntent;
+	}
+
 	if (PlayerStateComp && PlayerStateComp->IsHoldingAnything())
 	{
 		return EWB_SoccerAIIntent::Attack;
@@ -425,6 +553,8 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	case EWB_SoccerAIIntent::LastMan:      TickLastMan(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::SupportOpen:  TickSupportOpen(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::ReceivePass:  TickReceivePass(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::KeepAway:     TickKeepAway(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::ClearBall:    TickClearBall(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::Idle:         TickIdle(Me, DeltaSeconds); break;
 	default:                               Commands->StopMoving(); break;
 	}
@@ -1060,7 +1190,9 @@ void AWB_SoccerAIController_Base::TickLastMan(ACharacter* Me, float DeltaSeconds
 void AWB_SoccerAIController_Base::UpdateGoalkeeperStance(ACharacter* Me)
 {
 	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	if (!DiveComp || !Profile->bUseTeamRoles || !Profile->bGoalkeeperAutoDefense)
+	// The forced Goalkeeper (gyms) takes the stance even without the team roles.
+	const bool bRolesOn = Profile->bUseTeamRoles || GetForcedRole().MatchesTagExact(WBTags::AI_ForcedRole_Goalkeeper);
+	if (!DiveComp || !bRolesOn || !Profile->bGoalkeeperAutoDefense)
 	{
 		return;
 	}

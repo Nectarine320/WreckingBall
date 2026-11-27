@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
+#include "Match/Roster/WB_TeamRosterTypes.h"
 #include "WB_TeamRosterComponent.generated.h"
 
 class AWB_SoccerAIController_Base;
@@ -22,6 +24,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FWB_OnRosterBotsToggled, bool, bBot
  * Each character keeps its place: it appears there at kickoff and after each goal (AWB_TeamSpawnPoint, else a circle around the origin).
  * A human switches to a teammate bot, or passes and takes the receiver, with SwitchOrPass. The bots stay still until ToggleBots
  * unless RosterProfile->bStartBotsOnPlay.
+ * Gyms (devis gym-camera-p1): SetSlotComposition replaces the "PlayersPerTeam on each team" rule by a list of places (team, control, forced role,
+ * spawn place); RebuildRoster applies a new composition during the match. Off by default: without a composition, the match roster is unchanged.
  */
 UCLASS(Blueprintable, ClassGroup = (WreckingBall), meta = (BlueprintSpawnableComponent))
 class WRECKINGBALL_API UWB_TeamRosterComponent : public UActorComponent
@@ -70,6 +74,42 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "TeamRoster")
 	bool BuildRoster();
+
+	/**
+	 * Gyms: the next BuildRoster (or RebuildRoster) uses Slots instead of RosterProfile->PlayersPerTeam on each team. Places Gym.Control.Player
+	 * go to the local players in ID order (no player left: a bot, with a warning); a local player without a place gets no character (warning).
+	 * bInStartBotsOnPlay replaces RosterProfile->bStartBotsOnPlay. Does not rebuild by itself.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TeamRoster|Composition")
+	void SetSlotComposition(const TArray<FWB_RosterSlot>& Slots, bool bInStartBotsOnPlay);
+
+	/** Goes back to the match rule (RosterProfile->PlayersPerTeam on each team) for the next BuildRoster or RebuildRoster. */
+	UFUNCTION(BlueprintCallable, Category = "TeamRoster|Composition")
+	void ClearSlotComposition();
+
+	/** True while a slot composition is set (SetSlotComposition). */
+	UFUNCTION(BlueprintPure, Category = "TeamRoster|Composition")
+	bool IsUsingSlotComposition() const { return bUseSlotComposition; }
+
+	/**
+	 * Removes every bot character (OnRosterCharacterRemoving first), then builds the roster again (current composition, or the match rule) and puts
+	 * everyone back to its place, without reloading the map. The humans keep their PlayerController; one without a character gets a new one.
+	 * Returns false when the roster cannot be built (warning in the log).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "TeamRoster|Composition")
+	bool RebuildRoster();
+
+	/** Changes the forced role (AI.ForcedRole.*, empty = normal roles) of the place SlotIndex of the composition, at once, without rebuilding. Returns false when there is no such place. */
+	UFUNCTION(BlueprintCallable, Category = "TeamRoster|Composition")
+	bool SetSlotForcedRole(int32 SlotIndex, FGameplayTag ForcedRole);
+
+	/** Character of the place SlotIndex of the composition. None without a composition, or when the place has no character. */
+	UFUNCTION(BlueprintPure, Category = "TeamRoster|Composition")
+	APawn* GetCharacterAtSlot(int32 SlotIndex) const;
+
+	/** Forced role (AI.ForcedRole.*) of Character's place in the composition. Empty without a composition, or for a character without one. */
+	UFUNCTION(BlueprintPure, Category = "TeamRoster|Composition")
+	FGameplayTag GetForcedRoleOf(const APawn* Character) const;
 
 	/** True once BuildRoster succeeded. */
 	UFUNCTION(BlueprintPure, Category = "TeamRoster")
@@ -183,11 +223,30 @@ private:
 		TWeakObjectPtr<APawn> Character;
 		int32 TeamIndex = -1;
 		int32 PlaceIndex = 0;
+		/** Index in CompositionSlots (-1: match rule, no composition). */
+		int32 SlotIndex = INDEX_NONE;
 	};
 	TArray<FRosterEntry> Entries;
 
 	bool bBuilt = false;
 	bool bBotsActive = false;
+
+	/** Slot composition of the gyms (SetSlotComposition). */
+	bool bUseSlotComposition = false;
+	bool bCompositionStartBotsOnPlay = false;
+	TArray<FWB_RosterSlot> CompositionSlots;
+
+	/** BuildRoster with the match rule: PlayersPerTeam characters on each team. */
+	void BuildFromPlayersPerTeam(AWB_TeamSpawnPoint* SpawnPoints[2]);
+
+	/** BuildRoster with CompositionSlots. */
+	void BuildFromSlots(AWB_TeamSpawnPoint* SpawnPoints[2]);
+
+	/** Gives PlayerController a new character (GameMode Default Pawn Class) at Location when it has none. Returns its pawn. */
+	APawn* EnsureHumanPawn(APlayerController* PlayerController, const FVector& Location, const FRotator& Rotation);
+
+	/** Removes the character of PlayerController from the match (OnRosterCharacterRemoving, then destroyed). The view stays on the shared camera. */
+	void RemoveHumanPawn(APlayerController* PlayerController);
 	int32 SpawnedBotCount = 0;
 
 	/** World time of the last switch or pass, per player. */

@@ -5,6 +5,7 @@
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/SpringArmComponent.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWBSoccerCamera, Log, All);
@@ -46,22 +47,40 @@ FVector UWB_SoccerCameraProfile::ComputeCameraTarget(const AActor* Ball, const U
 	{
 		return BallLocation;
 	}
+	return ComputeWalkFraming((BallLocation + Carrier->GetActorLocation()) * 0.5f, Carrier, CameraView, LastCarrierDirection, OutCarrierDirection);
+}
 
-	// Direction the carrier goes: its flat velocity, or the last one while it stands still.
-	FVector Velocity = Carrier->GetVelocity();
+FVector UWB_SoccerCameraProfile::ComputePlayerCameraTarget(const APawn* Player, const USceneComponent* CameraView, FVector LastDirection, FVector& OutDirection) const
+{
+	OutDirection = FVector::ZeroVector;
+	if (!Player)
+	{
+		return FVector::ZeroVector;
+	}
+	if (!CameraView)
+	{
+		return Player->GetActorLocation();
+	}
+	return ComputeWalkFraming(Player->GetActorLocation(), Player, CameraView, LastDirection, OutDirection);
+}
+
+FVector UWB_SoccerCameraProfile::ComputeWalkFraming(const FVector& Anchor, const AActor* Mover, const USceneComponent* CameraView, FVector LastDirection, FVector& OutDirection) const
+{
+	// Direction the mover goes: its flat velocity, or the last one while it stands still.
+	FVector Velocity = Mover->GetVelocity();
 	Velocity.Z = 0.f;
-	LastCarrierDirection.Z = 0.f;
-	const FVector WantedDirection = Velocity.Size() >= CarrierDirectionMinSpeed ? Velocity.GetSafeNormal() : LastCarrierDirection;
+	LastDirection.Z = 0.f;
+	const FVector WantedDirection = Velocity.Size() >= CarrierDirectionMinSpeed ? Velocity.GetSafeNormal() : LastDirection;
 	// The direction itself is eased (not normalized): a U-turn shrinks it through zero, so the framing passes through the center.
-	const UWorld* World = Ball->GetWorld();
-	OutCarrierDirection = CarrierDirectionSmoothing > 0.f && World
-		? FMath::VInterpTo(LastCarrierDirection, WantedDirection, World->GetDeltaSeconds(), CarrierDirectionSmoothing)
+	const UWorld* World = Mover->GetWorld();
+	OutDirection = CarrierDirectionSmoothing > 0.f && World
+		? FMath::VInterpTo(LastDirection, WantedDirection, World->GetDeltaSeconds(), CarrierDirectionSmoothing)
 		: WantedDirection;
-	const FVector Anchor = (BallLocation + Carrier->GetActorLocation()) * 0.5f;
-	if (OutCarrierDirection.IsNearlyZero())
+	if (OutDirection.IsNearlyZero())
 	{
 		return Anchor;
 	}
+	const FVector OutCarrierDirection = OutDirection;
 
 	// Screen axes on the ground: right and up of the screen.
 	const FRotator Yaw(0.f, CameraView->GetComponentRotation().Yaw, 0.f);
