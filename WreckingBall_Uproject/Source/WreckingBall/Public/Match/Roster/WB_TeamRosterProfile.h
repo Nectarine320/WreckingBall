@@ -9,7 +9,7 @@
  * fallback placement used when a team has no AWB_TeamSpawnPoint. Asset: DA_TeamRoster_Default, set on the
  * UWB_TeamRosterComponent of BP_SoccerGamemode.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Match"))
 class WRECKINGBALL_API UWB_TeamRosterProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

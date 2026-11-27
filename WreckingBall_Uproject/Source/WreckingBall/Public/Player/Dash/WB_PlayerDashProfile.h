@@ -9,7 +9,7 @@
  * ComputeDashImpactVelocity, ApplyDashImpact, TryDashHitPlayer) and by the bots, through UWB_PlayerCommandComponent::DashProfile
  * or UWB_PlayerProfileLibrary::GetPlayerDashProfile. The energy cost of the Dash is in UWB_PlayerEnergyProfile.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_PlayerDashProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

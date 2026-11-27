@@ -10,7 +10,7 @@
  * Replaces the per-call constants of BPC_GrabObject (UpdatePhysicActorPosition). Speeds are per second, so the motion is the same at any frame rate;
  * the default values match the old look at 60 FPS.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_HeldObjectMotionProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

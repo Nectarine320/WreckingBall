@@ -49,6 +49,15 @@ Jeu de soccer en multijoueur local, de 2 à 4 joueurs, dans des lieux improvisé
 - Plus de nouveaux enums **Blueprint** : utilise des Gameplay Tags (les toolsets MCP ne permettent pas à l'IA de créer des enums dans l'éditeur). Les enums existants restent.
 - En C++, un `UENUM(BlueprintType)` est permis pour un choix fixe et interne à une classe C++ (ex. un mode de calcul), avec une `Category`-équivalent clair et un commentaire `/** */` en anglais par valeur. Pour une catégorie de gameplay extensible (types d'objets, d'impacts…), garde les Gameplay Tags.
 
+## Collections du Content Browser (décision de l'utilisateur, 2026-11-27)
+- Les collections locales se construisent avec **WB Tools → Content → Collections**, à partir des Gameplay Tags `Collection.*`. Chaque enfant direct de `Collection` est un master tag (`Collection.Design`, `Collection.Environment`, `Collection.Maps`, `Collection.Tools`), que chaque utilisateur coche ou décoche.
+- **Toute nouvelle classe de Data Asset reçoit un tag de collection** :
+  - classe C++ : `UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))` ;
+  - PDA Blueprint : bouton **Collections** de son éditeur, clic droit **Collection Tags...** dans le Content Browser, ou outil MCP `WB_ToolsToolset.SetCollectionTags`.
+- Un asset peut avoir **plusieurs tags**. Pour chaque master tag, c'est le tag le plus proche qui compte : l'asset lui-même, puis sa classe, puis ses parents.
+- Pour les Blueprints d'acteurs (`Collection.Environment`…), seuls les **derniers enfants** de chaque branche sont rangés : sans Blueprint enfant, nom qui ne finit pas par `_Base`.
+- Après un tag, sauvegarde l'asset, puis lance **Update Collections** (ou `WB_ToolsToolset.UpdateCollections`).
+
 ## Maps : Outliner et sous-niveaux (décision de l'utilisateur, 2026-11-27)
 - **Dossiers de l'Outliner**, toujours les mêmes à la racine, numérotés :
   - `00_Layout` : tout objet d'environnement qui meuble l'espace.

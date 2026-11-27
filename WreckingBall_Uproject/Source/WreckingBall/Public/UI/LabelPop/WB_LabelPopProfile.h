@@ -9,7 +9,7 @@
  * Settings of the label pop (DA_LabelPop_Default): the squash and stretch played on the P1-P4 label above a character
  * each time a player takes that character. Read by UWB_LabelPopComponent.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.UI"))
 class WRECKINGBALL_API UWB_LabelPopProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

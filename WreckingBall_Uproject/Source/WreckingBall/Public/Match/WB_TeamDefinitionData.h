@@ -38,7 +38,7 @@ struct WRECKINGBALL_API FWB_TeamDefinition
  * Look of every team in one place (DA_TeamDefinitions, UI 3D devis, lot A). Teams[TeamIndex] is the team TeamIndex (0 = red, 1 = blue).
  * The project uses the asset set in Project Settings > Game > Wrecking Ball Teams; read it with UWB_TeamLibrary::GetTeamDefinition.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Match"))
 class WRECKINGBALL_API UWB_TeamDefinitionData : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

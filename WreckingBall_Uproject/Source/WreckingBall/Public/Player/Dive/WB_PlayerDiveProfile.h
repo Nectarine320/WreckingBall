@@ -11,7 +11,7 @@ class UMaterialInterface;
  * Tuning of the defensive dive (UWB_PlayerDiveComponent, DA_PlayerDive_Default). Distance, speed and height are balanced often:
  * Docs/Plans/plan-plongeon.md lists every value and what it changes. Energy costs are in UWB_PlayerEnergyProfile.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_PlayerDiveProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

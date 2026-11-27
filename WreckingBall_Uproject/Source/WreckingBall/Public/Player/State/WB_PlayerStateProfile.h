@@ -10,7 +10,7 @@
  * Player state rules (Phase C, step 9): which state can follow which, hand rules, input filters and durations.
  * The constructor fills the transition table of the Phase C quote, so a new asset (DA_PlayerState_Default) starts ready to use.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_PlayerStateProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

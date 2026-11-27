@@ -11,7 +11,7 @@ class USoundBase;
  * Read every frame by UWB_BallDribbleComponent: the ball stays fully simulated (gravity, floor, bounces) and is only pushed flat
  * toward a point in front of the feet, while it rolls. A ball's PDA_PhysicsProfile can point to its own profile (DribbleProfile).
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Ball"))
 class WRECKINGBALL_API UWB_BallDribbleProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

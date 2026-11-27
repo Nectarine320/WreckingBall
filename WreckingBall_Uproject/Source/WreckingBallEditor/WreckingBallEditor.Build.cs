@@ -26,5 +26,8 @@ public class WreckingBallEditor : ModuleRules
 		// the project settings, Editor Utility Widgets, Blueprint graph nodes, Enhanced Input and the clipboard.
 		PublicDependencyModuleNames.AddRange(new string[] { "WreckingBall", "DeveloperSettings", "GameplayTags" });
 		PrivateDependencyModuleNames.AddRange(new string[] { "ToolMenus", "Blutility", "UMG", "UMGEditor", "BlueprintGraph", "EnhancedInput", "InputCore", "ApplicationCore" });
+
+		// WB Tools > Content > Collections: local collections, the Gameplay Tag picker, the Content Browser asset menu.
+		PrivateDependencyModuleNames.AddRange(new string[] { "CollectionManager", "GameplayTagsEditor", "ContentBrowser" });
 	}
 }

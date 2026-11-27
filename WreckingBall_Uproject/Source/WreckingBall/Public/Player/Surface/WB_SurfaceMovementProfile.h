@@ -9,7 +9,7 @@
  * How one floor surface changes the player movement (lot 12.1): one asset per Physical Surface (DA_SurfaceMovement_Wood, _Tile, _Carpet, _Ice...).
  * Multipliers of the base values of the Character Movement, never stacked from one surface to the next. 1 = no change.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_SurfaceMovementProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
@@ -44,7 +44,7 @@ public:
  * All the floor surfaces known to the movement (DA_SurfaceMovementTable): the profile of the surface under the feet, or DefaultProfile.
  * Read by UWB_SurfaceMovementComponent.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_SurfaceMovementTable : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

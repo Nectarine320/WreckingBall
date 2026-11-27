@@ -10,7 +10,7 @@
  * in Custom Depth with a stencil value, and the map's Post Process Volume (M_Outliner_Balls_Master_Inst) paints the silhouette.
  * Read by UWB_XRayOutlineComponent. One profile per kind of actor (DA_XRayOutline_Ball, later players...).
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Feedback"))
 class WRECKINGBALL_API UWB_XRayOutlineProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

@@ -8,7 +8,7 @@
  * Tuning of a soccer bot (AWB_SoccerAIController_Base): navigation, ball pickup, Dash on the ball carrier, shooting.
  * Distances in cm, times in seconds, angles in degrees. Default asset: DA_SoccerAIProfile_Default.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.AI"))
 class WRECKINGBALL_API UWB_SoccerAIProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

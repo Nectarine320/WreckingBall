@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Tools/Collections/WB_CollectionsLibrary.h"
 #include "Tools/DebugKeys/WB_DebugKeysLibrary.h"
 #include "Tools/Gym/WB_GymSelectorLibrary.h"
 #include "Tools/SortLevel/WB_SortLevelLibrary.h"
@@ -63,6 +64,25 @@ public:
 	 * @param NodeGuid Node of the entry (GetDebugKeys).
 	 * @param Description One line that says what the key does.
 	 */
+	/** Collection tags written on an asset itself (Blueprint or Data Asset), without the inherited ones. */
+	UFUNCTION(meta = (AICallable), Category = "WB Tools|Collections")
+	static FGameplayTagContainer GetCollectionTags(UObject* Asset);
+
+	/**
+	 * Writes the collection tags (Collection.*) of a Blueprint or Data Asset; several allowed, empty removes them. Save the asset after.
+	 * Tag every new Data Asset class (PDA) this way, or with meta WBCollection on a C++ class, then run UpdateCollections.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "WB Tools|Collections")
+	static bool SetCollectionTags(UObject* Asset, const FGameplayTagContainer& Tags);
+
+	/** Lists what UpdateCollections would change in the local collections of this editor. */
+	UFUNCTION(meta = (AICallable), Category = "WB Tools|Collections")
+	static FWB_CollectionsReport PreviewCollections();
+
+	/** Builds the local collections of this editor from the collection tags (checked master tags only). */
+	UFUNCTION(meta = (AICallable), Category = "WB Tools|Collections")
+	static FWB_CollectionsReport UpdateCollections();
+
 	UFUNCTION(meta = (AICallable), Category = "WB Tools|Debug Keys")
 	static bool SetDebugKeyDescription(const FString& Asset, FGuid NodeGuid, const FString& Description);
 };

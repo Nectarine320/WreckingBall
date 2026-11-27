@@ -37,7 +37,7 @@ struct WRECKINGBALL_API FWB_FeedbackEntry
  * Gameplay code asks for a feedback by Gameplay Tag (Feedback.*); the matching entry says what plays.
  * The project uses the asset set in Project Settings > Game > Wrecking Ball Feedback.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Feedback"))
 class WRECKINGBALL_API UWB_FeedbackSettings : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DeveloperSettings.h"
 #include "Engine/EngineTypes.h"
+#include "GameplayTagContainer.h"
 
 #include "WB_ToolsSettings.generated.h"
 
@@ -59,6 +60,26 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Gym|Levels")
 	FString GymLevelPattern;
 
+	/** Root of the collection tags (Collection). Its direct children are the master tags shown as checkboxes in WB Tools > Content > Collections. */
+	UPROPERTY(Config, EditAnywhere, Category = "Collections")
+	FGameplayTag CollectionRootTag;
+
+	/** Master tag of the levels (Collection.Maps): its collection gets the sub-collections Official, Gyms and Unsorted from the level name patterns (Gym > Levels). */
+	UPROPERTY(Config, EditAnywhere, Category = "Collections")
+	FGameplayTag MapsCollectionTag;
+
+	/** Collection of the Data Assets that have no collection tag at all: tag their class (C++ meta WBCollection, or the Collections button of the Blueprint editor). */
+	UPROPERTY(Config, EditAnywhere, Category = "Collections")
+	FString UntaggedCollectionName;
+
+	/** Color of the collection of each master tag (Collection.Design, Collection.Environment...), shown in the Content Browser. A master tag without color: its collections have none. */
+	UPROPERTY(Config, EditAnywhere, Category = "Collections", meta = (Categories = "Collection"))
+	TMap<FGameplayTag, FLinearColor> MasterCollectionColors;
+
+	/** How much darker each sub-collection is than its parent, on the color as seen on screen: 0.2 = 20% darker per level. */
+	UPROPERTY(Config, EditAnywhere, Category = "Collections", meta = (ClampMin = "0", ClampMax = "1"))
+	float CollectionShadeStep = 0.0f;
+
 	virtual FName GetCategoryName() const override { return TEXT("Editor"); }
 };
 
@@ -74,6 +95,10 @@ public:
 	/** True: every Play In Editor starts with the Player 1 camera, in any map and GameMode (console variable WB.StartWithPlayer1Camera). Set from WB Tools > Gym Mode. */
 	UPROPERTY(Config, EditAnywhere, Category = "Gym")
 	bool bPIEStartWithPlayer1Camera = false;
+
+	/** Master tags (Collection.Design, Collection.Environment...) whose collections are built in your local collections. Unchecked ones are removed. Set from WB Tools > Content > Collections. */
+	UPROPERTY(Config, EditAnywhere, Category = "Collections", meta = (Categories = "Collection"))
+	FGameplayTagContainer EnabledMasterTags;
 
 	virtual FName GetContainerName() const override { return TEXT("Editor"); }
 	virtual FName GetCategoryName() const override { return TEXT("General"); }

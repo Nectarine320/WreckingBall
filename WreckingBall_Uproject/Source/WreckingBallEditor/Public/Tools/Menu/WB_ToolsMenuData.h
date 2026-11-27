@@ -55,7 +55,7 @@ struct FWB_ToolsMenuEntry
  * Extra entries of the WB Tools editor menu (DA_WBToolsMenu, set in Project Settings > WB Tools). The built-in tools
  * (Sort Level, Gym, Debug Keys...) are always there; these entries are added after them, in their section.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Tools"))
 class WRECKINGBALLEDITOR_API UWB_ToolsMenuData : public UDataAsset
 {
 	GENERATED_BODY()

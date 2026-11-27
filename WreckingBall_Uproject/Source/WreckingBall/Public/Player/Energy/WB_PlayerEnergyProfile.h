@@ -11,7 +11,7 @@
  * Same rule for every cost: allowed with less energy than the cost (the bar is emptied, the player becomes Exhausted), refused while Exhausted.
  * Formerly UWB_PlayerActionCostProfile (class redirect in DefaultEngine.ini).
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_PlayerEnergyProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

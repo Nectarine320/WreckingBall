@@ -8,7 +8,7 @@
  * Look of the radial energy bar (DA_EnergyBarVisual, lot P of Phase C): colors, exhausted blink, refilled flash.
  * Read by UWB_EnergyBarWidget_Base (WBP_Sprintbar, shown by WBP_PlayerBar). The energy values themselves are in UWB_PlayerEnergyProfile.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.UI"))
 class WRECKINGBALL_API UWB_EnergyBarVisualProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

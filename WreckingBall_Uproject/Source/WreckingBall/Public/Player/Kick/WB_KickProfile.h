@@ -10,7 +10,7 @@
  * the ball's KickImpulse x the strength of the charge, capped at the ball's MaxKickSpeed (both in the ball's PDA_PhysicsProfile).
  * The throw of a held object uses the same charge. The move speed while charging and the state durations are in DA_PlayerState_Default.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_KickProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

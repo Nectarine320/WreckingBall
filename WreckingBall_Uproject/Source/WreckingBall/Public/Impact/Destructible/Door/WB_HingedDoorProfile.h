@@ -9,7 +9,7 @@
  * The door health (how hard it must be hit to be torn off its hinges) is NOT here: it is the MaxHealth of the door's
  * destructible profile (PDA_DestructibleProfile), like every destructible. When it reaches 0, the door is torn off.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Destruction"))
 class WRECKINGBALL_API UWB_HingedDoorProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

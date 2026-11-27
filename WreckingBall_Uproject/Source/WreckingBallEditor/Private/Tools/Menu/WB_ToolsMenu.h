@@ -20,4 +20,5 @@ public:
 	static const FName SortLevelTabId;
 	static const FName GymTabId;
 	static const FName DebugKeysTabId;
+	static const FName CollectionsTabId;
 };

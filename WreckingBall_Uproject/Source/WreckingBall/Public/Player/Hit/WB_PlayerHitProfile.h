@@ -11,7 +11,7 @@ class UMaterialInterface;
  * How a player reacts to hits (Phase C, step 10): stun threshold, durations, knockback, grace, friendly fire, drop and hit-react animations.
  * Used by UWB_PlayerHitComponent (DA_PlayerHit_Default). A Stunned player cannot move (UWB_PlayerStateProfile::StatesBlockingMovement).
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_PlayerHitProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

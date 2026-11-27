@@ -11,6 +11,7 @@
 #include "Misc/Paths.h"
 #include "Styling/AppStyle.h"
 #include "ToolMenus.h"
+#include "Tools/Collections/SWB_CollectionsPanel.h"
 #include "Tools/DebugKeys/SWB_DebugKeysPanel.h"
 #include "Tools/Gym/SWB_GymSelectorPanel.h"
 #include "Tools/Menu/WB_ToolsMenuData.h"
@@ -25,6 +26,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogWBToolsMenu, Log, All);
 const FName FWB_ToolsMenu::SortLevelTabId(TEXT("WBTools_SortLevel"));
 const FName FWB_ToolsMenu::GymTabId(TEXT("WBTools_Gym"));
 const FName FWB_ToolsMenu::DebugKeysTabId(TEXT("WBTools_DebugKeys"));
+const FName FWB_ToolsMenu::CollectionsTabId(TEXT("WBTools_Collections"));
 
 namespace WBToolsMenu
 {
@@ -84,6 +86,13 @@ namespace WBToolsMenu
 			LOCTEXT("SortLevelTip", "Puts every actor of the open map in its Outliner folder and sub-level (rules in Project Settings > Editor > WB Tools)."),
 			FSlateIcon(FAppStyle::GetAppStyleSetName(), TEXT("ClassIcon.WorldSettings")),
 			FUIAction(FExecuteAction::CreateStatic(&FWB_ToolsMenu::OpenTab, FWB_ToolsMenu::SortLevelTabId)));
+
+		FToolMenuSection& Content = Menu->AddSection(TEXT("Content"), LOCTEXT("Content", "Content"));
+		Content.AddMenuEntry(TEXT("Collections"),
+			LOCTEXT("Collections", "Collections"),
+			LOCTEXT("CollectionsTip", "Builds your local Content Browser collections from the collection tags (Collection.*) of the Blueprints, Data Assets and maps."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateStatic(&FWB_ToolsMenu::OpenTab, FWB_ToolsMenu::CollectionsTabId)));
 
 		FToolMenuSection& Animation = Menu->AddSection(TEXT("Animation"), LOCTEXT("Animation", "Animation"));
 		Animation.AddMenuEntry(TEXT("Retarget"),
@@ -146,6 +155,10 @@ void FWB_ToolsMenu::Register()
 		.SetDisplayName(LOCTEXT("DebugKeysTab", "Debug Keys & Commands"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(CollectionsTabId, FOnSpawnTab::CreateStatic(&SpawnPanelTab<SWB_CollectionsPanel>))
+		.SetDisplayName(LOCTEXT("CollectionsTab", "Collections"))
+		.SetMenuType(ETabSpawnerMenuType::Hidden);
+
 	StartupHandle = UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateStatic(&ExtendMainMenu));
 }
 
@@ -160,6 +173,7 @@ void FWB_ToolsMenu::Unregister()
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SortLevelTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GymTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(DebugKeysTabId);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CollectionsTabId);
 	}
 }
 

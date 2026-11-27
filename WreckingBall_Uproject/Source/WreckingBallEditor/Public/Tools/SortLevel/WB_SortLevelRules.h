@@ -49,7 +49,7 @@ struct FWB_SortLevelRule
  * Rules of the Sort Level tool (WB Tools > Level > Sort Level, devis wb-tools), set in Project Settings > WB Tools.
  * They write the Outliner and sub-level rule of CLAUDE.md ("Maps : Outliner et sous-niveaux").
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Tools"))
 class WRECKINGBALLEDITOR_API UWB_SortLevelRules : public UDataAsset
 {
 	GENERATED_BODY()

@@ -12,7 +12,7 @@ class USpringArmComponent;
  * Settings of the shared match camera (BP_SoccerCamera): ball follow, distance, angle, lag and field of view.
  * Asset: DA_SoccerCamera_Default, set on the CameraProfile variable of BP_SoccerCamera. The lot B camera (ball and carrier framing) extends it.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Camera"))
 class WRECKINGBALL_API UWB_SoccerCameraProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

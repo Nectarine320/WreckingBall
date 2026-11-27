@@ -45,3 +45,23 @@ bool UWB_ToolsToolset::SetDebugKeyDescription(const FString& Asset, FGuid NodeGu
 {
 	return UWB_DebugKeysLibrary::SetDebugKeyDescription(Asset, NodeGuid, Description);
 }
+
+FGameplayTagContainer UWB_ToolsToolset::GetCollectionTags(UObject* Asset)
+{
+	return UWB_CollectionsLibrary::GetCollectionTags(Asset);
+}
+
+bool UWB_ToolsToolset::SetCollectionTags(UObject* Asset, const FGameplayTagContainer& Tags)
+{
+	return UWB_CollectionsLibrary::SetCollectionTags(Asset, Tags);
+}
+
+FWB_CollectionsReport UWB_ToolsToolset::PreviewCollections()
+{
+	return UWB_CollectionsLibrary::PreviewCollections();
+}
+
+FWB_CollectionsReport UWB_ToolsToolset::UpdateCollections()
+{
+	return UWB_CollectionsLibrary::UpdateCollections();
+}

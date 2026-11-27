@@ -18,7 +18,7 @@ enum class EWB_PassAimMode : uint8
  * Pass settings (devis match 3v3, lot A): ground pass toward a teammate, speed from a share of the ball's kick, raised when the
  * receiver is far, capped at the kick. Asset: DA_Pass_Default, set on the UWB_PlayerCommandComponent of BP_GenericCharacter.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Player"))
 class WRECKINGBALL_API UWB_PassProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

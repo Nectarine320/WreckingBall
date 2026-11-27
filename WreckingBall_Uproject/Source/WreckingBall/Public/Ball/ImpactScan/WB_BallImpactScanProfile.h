@@ -10,7 +10,7 @@
  * While the ball goes fast, a sphere is swept ahead of it along its velocity; every blocking hit is reported to the ball Blueprint,
  * which applies the impact (BPI_ImpactReceiver) before the physics contact happens.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Ball"))
 class WRECKINGBALL_API UWB_BallImpactScanProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

@@ -11,7 +11,7 @@
  * Assets DA_Gym_* in /Game/Level/GYM/Data, read by UWB_GymDirectorComponent on GM_Gym. The active one is chosen in the map (BP_GymSettings),
  * or during the match with LoadGymDefinition (debug menu).
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.Gym"))
 class WRECKINGBALL_API UWB_GymDefinition : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

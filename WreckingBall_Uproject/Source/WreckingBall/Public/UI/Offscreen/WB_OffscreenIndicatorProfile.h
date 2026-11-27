@@ -11,7 +11,7 @@ class UWB_OffscreenIndicatorItem_Base;
  * Settings of the off-screen indicators (devis match 3v3, lot B): a disc at the team color at the screen edge, toward each character
  * that left the frame ("P1".."P4" on the humans, no text on the bots), smaller the farther the character is. Asset: DA_OffscreenIndicator_Default, set on WBP_OffscreenIndicators.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.UI"))
 class WRECKINGBALL_API UWB_OffscreenIndicatorProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()

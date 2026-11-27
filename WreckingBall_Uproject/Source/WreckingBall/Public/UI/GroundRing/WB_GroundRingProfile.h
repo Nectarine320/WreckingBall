@@ -12,7 +12,7 @@ class UStaticMesh;
  * Settings of a ground ring decal (UI 3D devis, lot A): DA_GroundRing_Player under each player, DA_GroundRing_Ball under the active ball.
  * Read by UWB_GroundRingComponent. The look itself (thickness, shadow, kick gauge colors) is in the decal material instance.
  */
-UCLASS(BlueprintType)
+UCLASS(BlueprintType, meta = (WBCollection = "Collection.Design.UI"))
 class WRECKINGBALL_API UWB_GroundRingProfile : public UPrimaryDataAsset
 {
 	GENERATED_BODY()
