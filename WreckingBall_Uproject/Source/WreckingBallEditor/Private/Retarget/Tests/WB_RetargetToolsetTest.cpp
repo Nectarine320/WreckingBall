@@ -1,5 +1,6 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
+#include "Animation/AnimData/IAnimationDataModel.h"
 #include "Animation/AnimSequence.h"
 #include "EditorAssetLibrary.h"
 #include "Engine/SkeletalMesh.h"
@@ -21,6 +22,7 @@ namespace
 	const TCHAR* SourceMeshPath = TEXT("/Game/Art/Character/Prototype/SKM_Character_FirstPrototype.SKM_Character_FirstPrototype");
 	const TCHAR* TargetMeshPath = TEXT("/Game/Art/Character/Soccer/Soccer_Boy_A/SKM_Soccer_Boy_A.SKM_Soccer_Boy_A");
 	const TCHAR* SourceAnimPath = TEXT("/Game/Art/Character/Prototype/Animation/Dash/AS_Dash_Recoil.AS_Dash_Recoil");
+	const TCHAR* TargetAnimPath = TEXT("/Game/Art/Character/Soccer/Sequence/Run_01/SKM_Soccer_Run_01.SKM_Soccer_Run_01");
 	const TCHAR* TestFolder = TEXT("/Game/__WB_AutomationTests/Retarget");
 }
 
@@ -283,6 +285,54 @@ void FWB_RetargetToolsetSpec::Define()
 			}
 		});
 
+		It("sets and reads FK chain settings", [this]()
+		{
+			UIKRetargeter* Retargeter = MakeRetargeter();
+			FRetargetFKChainSettings Read;
+			Call([&]()
+			{
+				FRetargetFKChainSettings Settings = UWB_RetargetToolset::GetFKChainSettings(Retargeter, TEXT("LeftArm"));
+				Settings.RotationAlpha = 0.25;
+				UWB_RetargetToolset::SetFKChainSettings(Retargeter, Settings);
+				Read = UWB_RetargetToolset::GetFKChainSettings(Retargeter, TEXT("LeftArm"));
+			});
+			ExpectNoException();
+			TestEqual(TEXT("RotationAlpha"), Read.RotationAlpha, 0.25);
+		});
+
+		It("sets and reads the pelvis translation scale", [this]()
+		{
+			UIKRetargeter* Retargeter = MakeRetargeter();
+			FWB_PelvisTranslationScale Read;
+			Call([&]()
+			{
+				FWB_PelvisTranslationScale Scale;
+				Scale.Horizontal = 0.0;
+				Scale.Vertical = 0.5;
+				UWB_RetargetToolset::SetPelvisTranslationScale(Retargeter, Scale);
+				Read = UWB_RetargetToolset::GetPelvisTranslationScale(Retargeter);
+			});
+			ExpectNoException();
+			TestEqual(TEXT("Horizontal"), Read.Horizontal, 0.0);
+			TestEqual(TEXT("Vertical"), Read.Vertical, 0.5);
+		});
+
+		It("raises on a null retargeter for the pelvis scale", [this]()
+		{
+			Call([&]() { UWB_RetargetToolset::GetPelvisTranslationScale(nullptr); });
+			ExpectExceptionContains(TEXT("Retargeter must not be null"));
+		});
+
+		It("raises on an unknown chain in the FK settings", [this]()
+		{
+			UIKRetargeter* Retargeter = MakeRetargeter();
+			ExpectNoException();
+			Call([&]() { UWB_RetargetToolset::GetFKChainSettings(Retargeter, TEXT("NoSuchChain")); });
+			ExpectExceptionContains(TEXT("has no target chain"));
+			Call([&]() { UWB_RetargetToolset::SetFKChainSettings(Retargeter, FRetargetFKChainSettings(TEXT("NoSuchChain"))); });
+			ExpectExceptionContains(TEXT("has no target chain"));
+		});
+
 		It("raises on an unknown chain in the mapping", [this]()
 		{
 			UIKRetargeter* Retargeter = MakeRetargeter();
@@ -357,6 +407,40 @@ void FWB_RetargetToolsetSpec::Define()
 			}
 		});
 
+		It("keeps the target reference-pose bone scale", [this]()
+		{
+			ExpectAssetCreation();
+			UAnimSequence* TargetAnim = LoadObject<UAnimSequence>(nullptr, TargetAnimPath);
+			TestNotNull(TEXT("Target anim fixture"), TargetAnim);
+			TArray<UObject*> Created;
+			Call([&]()
+			{
+				UIKRigDefinition* Rig = UWB_RetargetToolset::CreateIKRig(TestFolder, TEXT("IK_TestSelf"), TargetMesh);
+				UWB_RetargetToolset::AutoGenerateRetargetChains(Rig);
+				UIKRetargeter* Retargeter = UWB_RetargetToolset::CreateRetargeter(TestFolder, TEXT("RTG_TestSelf"), Rig, Rig);
+				Created = UWB_RetargetToolset::RetargetAnimations(Retargeter, { TargetAnim }, TestFolder, TEXT(""), TEXT(""), TEXT(""), TEXT("_Test"), false, true);
+			});
+			ExpectNoException();
+			const UAnimSequence* NewAnim = Created.IsEmpty() ? nullptr : Cast<UAnimSequence>(Created[0]);
+			if (!TestNotNull(TEXT("Retargeted anim"), NewAnim))
+			{
+				return;
+			}
+			const FReferenceSkeleton& RefSkeleton = TargetMesh->GetRefSkeleton();
+			for (int32 BoneIndex = 0; BoneIndex < RefSkeleton.GetNum(); ++BoneIndex)
+			{
+				const FVector RefScale = RefSkeleton.GetRefBonePose()[BoneIndex].GetScale3D();
+				const FName BoneName = RefSkeleton.GetBoneName(BoneIndex);
+				if (RefScale.Equals(FVector::OneVector) || !NewAnim->GetDataModel()->IsValidBoneTrackName(BoneName))
+				{
+					continue;
+				}
+				TArray<FTransform> Keys;
+				NewAnim->GetDataModel()->GetBoneTrackTransforms(BoneName, Keys);
+				TestTrue(*FString::Printf(TEXT("%s keeps its reference scale"), *BoneName.ToString()), !Keys.IsEmpty() && Keys[0].GetScale3D().Equals(RefScale, 0.001));
+			}
+		});
+
 		It("raises when no asset is given", [this]()
 		{
 			UIKRetargeter* Retargeter = MakeRetargeter();
@@ -372,6 +456,92 @@ void FWB_RetargetToolsetSpec::Define()
 			Call([&]() { UWB_RetargetToolset::RetargetAnimations(Retargeter, { TargetMesh }, TestFolder, TEXT(""), TEXT(""), TEXT(""), TEXT(""), false, true); });
 			ExpectExceptionContains(TEXT("is not an animation asset"));
 		});
+	});
+}
+
+#endif // WITH_DEV_AUTOMATION_TESTS
+
+#if WITH_DEV_AUTOMATION_TESTS
+
+BEGIN_DEFINE_SPEC(FWB_RetargetToolsetFixSpec, "WreckingBall.Toolsets.RetargetToolset.Fix", TestFlags)
+
+	TUniquePtr<UE::ToolsetRegistry::FToolCallExceptionHandler> ExceptionHandler;
+	UAnimSequence* TestAnim = nullptr;
+
+	void Call(TFunction<void()>&& Func)
+	{
+		ExceptionHandler->CaptureErrorsIn(MoveTemp(Func));
+	}
+
+	void ExpectExceptionContains(const FString& Text)
+	{
+		TestTrue(*FString::Printf(TEXT("Error contains '%s'"), *Text), ExceptionHandler->GetException().Contains(Text));
+		ExceptionHandler = MakeUnique<UE::ToolsetRegistry::FToolCallExceptionHandler>();
+	}
+
+END_DEFINE_SPEC(FWB_RetargetToolsetFixSpec)
+
+void FWB_RetargetToolsetFixSpec::Define()
+{
+	BeforeEach([this]()
+	{
+		// The test animation is a duplicate in the test folder, never saved: Git warns that the folder is missing on disk.
+		AddExpectedError(TEXT("could not open directory"), EAutomationExpectedErrorFlags::Contains, 0);
+		ExceptionHandler = MakeUnique<UE::ToolsetRegistry::FToolCallExceptionHandler>();
+		UAnimSequence* Source = LoadObject<UAnimSequence>(nullptr, TargetAnimPath);
+		TestAnim = Cast<UAnimSequence>(UEditorAssetLibrary::DuplicateLoadedAsset(Source, FString(TestFolder) / TEXT("AS_FixTest")));
+		TestNotNull(TEXT("Test anim"), TestAnim);
+	});
+
+	AfterEach([this]()
+	{
+		TestEqual(TEXT("Error"), ExceptionHandler->GetException(), FString());
+		ExceptionHandler.Reset();
+		if (UEditorAssetLibrary::DoesDirectoryExist(TestFolder))
+		{
+			UEditorAssetLibrary::DeleteDirectory(TestFolder);
+		}
+	});
+
+	It("adds a local rotation offset to a bone", [this]()
+	{
+		FRotator Before, After;
+		Call([&]()
+		{
+			Before = UWB_RetargetToolset::GetBoneLocalRotation(TestAnim, TEXT("LeftArm"), 0);
+			UWB_RetargetToolset::OffsetBoneRotation(TestAnim, TEXT("LeftArm"), FRotator(0.0, 0.0, 30.0), 0, -1, 0, 0);
+			After = UWB_RetargetToolset::GetBoneLocalRotation(TestAnim, TEXT("LeftArm"), 0);
+		});
+		const double Angle = FMath::RadiansToDegrees(Before.Quaternion().AngularDistance(After.Quaternion()));
+		TestTrue(*FString::Printf(TEXT("Rotated by 30 degrees (got %.2f)"), Angle), FMath::IsNearlyEqual(Angle, 30.0, 0.1));
+	});
+
+	It("leaves keys outside the range untouched", [this]()
+	{
+		FRotator Before, After;
+		Call([&]()
+		{
+			Before = UWB_RetargetToolset::GetBoneLocalRotation(TestAnim, TEXT("LeftArm"), 0);
+			UWB_RetargetToolset::OffsetBoneRotation(TestAnim, TEXT("LeftArm"), FRotator(0.0, 0.0, 30.0), 1, -1, 0, 0);
+			After = UWB_RetargetToolset::GetBoneLocalRotation(TestAnim, TEXT("LeftArm"), 0);
+		});
+		TestTrue(TEXT("Frame 0 unchanged"), Before.Equals(After, 0.001));
+	});
+
+	It("raises on a bone that is not in the skeleton", [this]()
+	{
+		Call([&]() { UWB_RetargetToolset::OffsetBoneRotation(TestAnim, TEXT("NoSuchBone"), FRotator::ZeroRotator, 0, -1, 0, 0); });
+		ExpectExceptionContains(TEXT("is not in the skeleton"));
+		Call([&]() { UWB_RetargetToolset::GetBoneLocalRotation(TestAnim, TEXT("NoSuchBone"), 0); });
+		ExpectExceptionContains(TEXT("is not in the skeleton"));
+	});
+
+	It("raises on a frame range outside the animation", [this]()
+	{
+		Call([&]() { UWB_RetargetToolset::OffsetBoneRotation(TestAnim, TEXT("LeftArm"), FRotator::ZeroRotator, 0, 100000, 0, 0); });
+		ExpectExceptionContains(TEXT("is outside"));
+		Call([&]() { UWB_RetargetToolset::GetBoneLocalRotation(TestAnim, TEXT("LeftArm"), 100000); });
+		ExpectExceptionContains(TEXT("is outside"));
 	});
 }
 

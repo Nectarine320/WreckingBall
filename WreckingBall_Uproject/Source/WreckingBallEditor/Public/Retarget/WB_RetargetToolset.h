@@ -5,10 +5,12 @@
 #include "CoreMinimal.h"
 #include "RetargetEditor/IKRetargeterPoseGenerator.h"
 #include "Retargeter/IKRetargetSettings.h"
+#include "Retargeter/RetargetOps/FKChainsOp.h"
 #include "ToolsetRegistry/ToolsetDefinition.h"
 
 #include "WB_RetargetToolset.generated.h"
 
+class UAnimSequence;
 class UIKRetargeter;
 class UIKRigDefinition;
 class USkeletalMesh;
@@ -66,10 +68,25 @@ struct FWB_RetargetChainPair
 	FName SourceChain;
 };
 
+/** How much of the source pelvis translation the retargeter copies onto the target pelvis. */
+USTRUCT(BlueprintType)
+struct FWB_PelvisTranslationScale
+{
+	GENERATED_BODY()
+
+	/** Scale of the motion on the ground plane (X, Y). 0 keeps the pelvis in place. */
+	UPROPERTY(BlueprintReadWrite, Category = "Retarget")
+	double Horizontal = 1.0;
+
+	/** Scale of the vertical motion (Z). */
+	UPROPERTY(BlueprintReadWrite, Category = "Retarget")
+	double Vertical = 1.0;
+};
+
 /**
  * Transfers animation between skeletons. Builds IK Rigs (retarget root and chains) and IK Retargeters
  * (chain mapping and retarget pose), then duplicates and retargets animation assets, Blend Spaces and
- * Animation Blueprints onto another skeletal mesh.
+ * Animation Blueprints onto another skeletal mesh, and touches up bone rotations of the results.
  */
 UCLASS(BlueprintType, Hidden)
 class UWB_RetargetToolset : public UToolsetDefinition
@@ -175,6 +192,41 @@ public:
 	static void SetChainMapping(UIKRetargeter* Retargeter, FName TargetChain, FName SourceChain);
 
 	/**
+	 * Returns how the FK chains op copies animation onto a target chain.
+	 * @param Retargeter The retargeter to read.
+	 * @param TargetChain A chain of the target rig.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "Retarget|IK Retargeter")
+	static FRetargetFKChainSettings GetFKChainSettings(UIKRetargeter* Retargeter, FName TargetChain);
+
+	/**
+	 * Sets how the FK chains op copies animation onto a target chain. The chain is the one named in
+	 * Settings.TargetChainName. A RotationAlpha below 1 makes a chain follow only part of its source
+	 * rotation, e.g. a clavicle mapped to the source arm that rises a little when the arm goes up.
+	 * @param Retargeter The retargeter to edit.
+	 * @param Settings The new settings of the chain.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "Retarget|IK Retargeter")
+	static void SetFKChainSettings(UIKRetargeter* Retargeter, const FRetargetFKChainSettings& Settings);
+
+	/**
+	 * Returns how much of the source pelvis translation the pelvis motion op copies onto the target.
+	 * @param Retargeter The retargeter to read.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "Retarget|IK Retargeter")
+	static FWB_PelvisTranslationScale GetPelvisTranslationScale(UIKRetargeter* Retargeter);
+
+	/**
+	 * Sets how much of the source pelvis translation the pelvis motion op copies onto the target.
+	 * Horizontal 0 keeps the pelvis at its retarget-pose position on the ground plane (in-place
+	 * animations); Vertical 1 keeps hops and crouches.
+	 * @param Retargeter The retargeter to edit.
+	 * @param Scale The new scales. 1 copies the source motion, 0 removes it.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "Retarget|IK Retargeter")
+	static void SetPelvisTranslationScale(UIKRetargeter* Retargeter, const FWB_PelvisTranslationScale& Scale);
+
+	/**
 	 * Rotates bones of the current retarget pose so their direction matches the other skeleton's
 	 * retarget pose (e.g. brings a T-pose's arms down to match an A-pose).
 	 * @param Retargeter The retargeter to edit.
@@ -219,6 +271,7 @@ public:
 	/**
 	 * Duplicates animation assets onto the retargeter's target mesh and retargets them, from the
 	 * retargeter's source preview mesh to its target preview mesh. New assets are not saved.
+	 * Target bones whose reference pose is scaled (e.g. a Blender root at scale 100) keep that scale.
 	 * @param Retargeter The retargeter to use.
 	 * @param Assets Anim Sequences, Montages, Blend Spaces or Animation Blueprints of the source skeleton.
 	 * @param TargetFolder Content folder that receives the new assets.
@@ -241,6 +294,33 @@ public:
 		const FString& Suffix,
 		bool bIncludeReferencedAssets,
 		bool bOverwriteExisting);
+
+	// ---------------------------------------------------------------- Fix
+
+	/**
+	 * Returns a bone's local rotation in an animation at a given frame.
+	 * @param Sequence The animation to read.
+	 * @param BoneName A bone of the animation's skeleton.
+	 * @param Frame Key index, from 0.
+	 * @return Rotation relative to the parent bone, in degrees. The reference pose when the bone has no track.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "Retarget|Fix")
+	static FRotator GetBoneLocalRotation(UAnimSequence* Sequence, FName BoneName, int32 Frame);
+
+	/**
+	 * Adds a rotation to a bone over a frame range of an animation, to touch up a retargeted pose.
+	 * The offset is applied in the bone's own local space, after its animated rotation, and is faded
+	 * in and out linearly. The asset is not saved.
+	 * @param Sequence The animation to edit.
+	 * @param BoneName A bone of the animation's skeleton.
+	 * @param Offset Rotation added at full weight, in degrees.
+	 * @param StartFrame First key affected, from 0.
+	 * @param EndFrame Last key affected. Negative means the last key.
+	 * @param BlendInFrames Keys over which the offset grows from 0 to full, starting at StartFrame.
+	 * @param BlendOutFrames Keys over which the offset shrinks back to 0, ending at EndFrame.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "Retarget|Fix")
+	static void OffsetBoneRotation(UAnimSequence* Sequence, FName BoneName, FRotator Offset, int32 StartFrame, int32 EndFrame, int32 BlendInFrames, int32 BlendOutFrames);
 
 private:
 	/** Raises a script error that the toolset registry returns to the caller. */

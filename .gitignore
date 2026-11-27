@@ -6,6 +6,7 @@
 !/WreckingBall_Uproject/Binaries/Win64/
 /WreckingBall_Uproject/Binaries/Win64/*
 !/WreckingBall_Uproject/Binaries/Win64/UnrealEditor-WreckingBall.dll
+!/WreckingBall_Uproject/Binaries/Win64/UnrealEditor-WreckingBallEditor.dll
 !/WreckingBall_Uproject/Binaries/Win64/UnrealEditor.modules
 !/WreckingBall_Uproject/Binaries/Win64/WreckingBallEditor.target
 /WreckingBall_Uproject/.vs

@@ -3,6 +3,10 @@
 #include "Retarget/WB_RetargetToolset.h"
 
 #include "Animation/AnimBlueprint.h"
+#include "Animation/AnimData/IAnimationDataController.h"
+#include "Animation/AnimData/IAnimationDataModel.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/Skeleton.h"
 #include "Animation/AnimationAsset.h"
 #include "AssetRegistry/AssetData.h"
 #include "AssetToolsModule.h"
@@ -17,6 +21,7 @@
 #include "Retargeter/IKRetargetChainMapping.h"
 #include "Retargeter/IKRetargeter.h"
 #include "Retargeter/RetargetOps/FKChainsOp.h"
+#include "Retargeter/RetargetOps/PelvisMotionOp.h"
 #include "Retargeter/RetargetOps/RootMotionGeneratorOp.h"
 #include "Retargeter/RetargetOps/RunIKRigOp.h"
 #include "Rig/IKRigDefinition.h"
@@ -89,6 +94,53 @@ namespace WB_RetargetToolset
 			}
 		}
 		return INDEX_NONE;
+	}
+
+	/**
+	 * The retarget processor strips bone scale, so a bone whose reference pose is scaled (a Blender export often
+	 * scales its root bone by 100) comes out at scale 1 and the mesh shrinks. Puts the target reference-pose scale back.
+	 */
+	void RestoreRefPoseScale(UAnimSequence* Sequence, const USkeletalMesh* TargetMesh)
+	{
+		const FReferenceSkeleton& RefSkeleton = TargetMesh->GetRefSkeleton();
+		const TArray<FTransform>& RefPose = RefSkeleton.GetRefBonePose();
+		const IAnimationDataModel* Model = Sequence->GetDataModel();
+		IAnimationDataController& Controller = Sequence->GetController();
+		const int32 NumKeys = Model->GetNumberOfKeys();
+
+		IAnimationDataController::FScopedBracket Bracket(Controller, NSLOCTEXT("WB_RetargetToolset", "RestoreRefPoseScale", "Restore reference-pose bone scale"), false);
+		for (int32 BoneIndex = 0; BoneIndex < RefPose.Num(); ++BoneIndex)
+		{
+			const FVector RefScale = RefPose[BoneIndex].GetScale3D();
+			if (RefScale.Equals(FVector::OneVector))
+			{
+				continue;
+			}
+
+			const FName BoneName = RefSkeleton.GetBoneName(BoneIndex);
+			TArray<FVector> Positions;
+			TArray<FQuat> Rotations;
+			TArray<FVector> Scales;
+			if (Model->IsValidBoneTrackName(BoneName))
+			{
+				TArray<FTransform> Keys;
+				Model->GetBoneTrackTransforms(BoneName, Keys);
+				for (const FTransform& Key : Keys)
+				{
+					Positions.Add(Key.GetLocation());
+					Rotations.Add(Key.GetRotation());
+					Scales.Add(RefScale);
+				}
+			}
+			else
+			{
+				Controller.AddBoneCurve(BoneName, false);
+				Positions.Init(RefPose[BoneIndex].GetLocation(), NumKeys);
+				Rotations.Init(RefPose[BoneIndex].GetRotation(), NumKeys);
+				Scales.Init(RefScale, NumKeys);
+			}
+			Controller.SetBoneTrackKeys(BoneName, Positions, Rotations, Scales, false);
+		}
 	}
 
 	/** The retargeter's IK Rig on the given side, or null. */
@@ -371,6 +423,120 @@ void UWB_RetargetToolset::SetChainMapping(UIKRetargeter* Retargeter, FName Targe
 	}
 }
 
+namespace WB_RetargetToolset
+{
+	/** Controller of the retargeter's first FK chains op, or null. */
+	UIKRetargetFKChainsController* GetFKChainsController(const UIKRetargeter* Retargeter)
+	{
+		UIKRetargeterController* Controller = UIKRetargeterController::GetController(Retargeter);
+		const int32 OpIndex = FindOpIndex(Controller, Controller->GetFirstRetargetOpOfType<FIKRetargetFKChainsOp>());
+		return OpIndex == INDEX_NONE ? nullptr : Cast<UIKRetargetFKChainsController>(Controller->GetOpController(OpIndex));
+	}
+}
+
+FRetargetFKChainSettings UWB_RetargetToolset::GetFKChainSettings(UIKRetargeter* Retargeter, FName TargetChain)
+{
+	if (!Retargeter)
+	{
+		Raise(TEXT("Retargeter must not be null."));
+		return {};
+	}
+	UIKRetargetFKChainsController* OpController = WB_RetargetToolset::GetFKChainsController(Retargeter);
+	if (!OpController)
+	{
+		Raise(FString::Printf(TEXT("Retargeter '%s' has no FK chains op."), *Retargeter->GetName()));
+		return {};
+	}
+
+	const FIKRetargetFKChainsOpSettings OpSettings = OpController->GetSettings();
+	const FRetargetFKChainSettings* Found = OpSettings.ChainsToRetarget.FindByPredicate(
+		[TargetChain](const FRetargetFKChainSettings& Chain) { return Chain.TargetChainName == TargetChain; });
+	if (!Found)
+	{
+		Raise(FString::Printf(TEXT("The FK chains op of '%s' has no target chain named '%s'."), *Retargeter->GetName(), *TargetChain.ToString()));
+		return {};
+	}
+	return *Found;
+}
+
+void UWB_RetargetToolset::SetFKChainSettings(UIKRetargeter* Retargeter, const FRetargetFKChainSettings& Settings)
+{
+	if (!Retargeter)
+	{
+		Raise(TEXT("Retargeter must not be null."));
+		return;
+	}
+	UIKRetargetFKChainsController* OpController = WB_RetargetToolset::GetFKChainsController(Retargeter);
+	if (!OpController)
+	{
+		Raise(FString::Printf(TEXT("Retargeter '%s' has no FK chains op."), *Retargeter->GetName()));
+		return;
+	}
+
+	FIKRetargetFKChainsOpSettings OpSettings = OpController->GetSettings();
+	FRetargetFKChainSettings* Found = OpSettings.ChainsToRetarget.FindByPredicate(
+		[&Settings](const FRetargetFKChainSettings& Chain) { return Chain.TargetChainName == Settings.TargetChainName; });
+	if (!Found)
+	{
+		Raise(FString::Printf(TEXT("The FK chains op of '%s' has no target chain named '%s'."), *Retargeter->GetName(), *Settings.TargetChainName.ToString()));
+		return;
+	}
+
+	Retargeter->Modify();
+	*Found = Settings;
+	OpController->SetSettings(OpSettings);
+}
+
+namespace WB_RetargetToolset
+{
+	/** Settings of the retargeter's first pelvis motion op, edited in place, or null. */
+	FIKRetargetPelvisMotionOpSettings* GetPelvisMotionSettings(const UIKRetargeter* Retargeter)
+	{
+		FIKRetargetPelvisMotionOp* Op = UIKRetargeterController::GetController(Retargeter)->GetFirstRetargetOpOfType<FIKRetargetPelvisMotionOp>();
+		return Op ? static_cast<FIKRetargetPelvisMotionOpSettings*>(Op->GetSettings()) : nullptr;
+	}
+}
+
+FWB_PelvisTranslationScale UWB_RetargetToolset::GetPelvisTranslationScale(UIKRetargeter* Retargeter)
+{
+	if (!Retargeter)
+	{
+		Raise(TEXT("Retargeter must not be null."));
+		return {};
+	}
+	const FIKRetargetPelvisMotionOpSettings* Settings = WB_RetargetToolset::GetPelvisMotionSettings(Retargeter);
+	if (!Settings)
+	{
+		Raise(FString::Printf(TEXT("Retargeter '%s' has no pelvis motion op."), *Retargeter->GetName()));
+		return {};
+	}
+	FWB_PelvisTranslationScale Scale;
+	Scale.Horizontal = Settings->ScaleHorizontal;
+	Scale.Vertical = Settings->ScaleVertical;
+	return Scale;
+}
+
+void UWB_RetargetToolset::SetPelvisTranslationScale(UIKRetargeter* Retargeter, const FWB_PelvisTranslationScale& Scale)
+{
+	if (!Retargeter)
+	{
+		Raise(TEXT("Retargeter must not be null."));
+		return;
+	}
+	FIKRetargetPelvisMotionOpSettings* Settings = WB_RetargetToolset::GetPelvisMotionSettings(Retargeter);
+	if (!Settings)
+	{
+		Raise(FString::Printf(TEXT("Retargeter '%s' has no pelvis motion op."), *Retargeter->GetName()));
+		return;
+	}
+
+	const UIKRetargeterController* Controller = UIKRetargeterController::GetController(Retargeter);
+	FScopedReinitializeIKRetargeter Reinitialize(Controller);
+	Retargeter->Modify();
+	Settings->ScaleHorizontal = Scale.Horizontal;
+	Settings->ScaleVertical = Scale.Vertical;
+}
+
 void UWB_RetargetToolset::AutoAlignRetargetPose(UIKRetargeter* Retargeter, ERetargetSourceOrTarget Side, ERetargetAutoAlignMethod Method, const TArray<FName>& Bones)
 {
 	if (!Retargeter)
@@ -536,6 +702,10 @@ TArray<UObject*> UWB_RetargetToolset::RetargetAnimations(
 	{
 		if (UObject* NewAsset = AssetData.GetAsset())
 		{
+			if (UAnimSequence* NewSequence = Cast<UAnimSequence>(NewAsset))
+			{
+				WB_RetargetToolset::RestoreRefPoseScale(NewSequence, TargetMesh);
+			}
 			Created.Add(NewAsset);
 		}
 	}
@@ -544,4 +714,106 @@ TArray<UObject*> UWB_RetargetToolset::RetargetAnimations(
 		Raise(TEXT("No asset was retargeted. See the output log (LogIKRigEditor)."));
 	}
 	return Created;
+}
+
+// ==================================================================== Fix
+
+namespace WB_RetargetToolset
+{
+	/** Local transforms of a bone for every key: its track, or its reference pose when it has none. */
+	TArray<FTransform> GetBoneKeys(const UAnimSequence* Sequence, FName BoneName, int32 RefBoneIndex)
+	{
+		const IAnimationDataModel* Model = Sequence->GetDataModel();
+		TArray<FTransform> Keys;
+		if (Model->IsValidBoneTrackName(BoneName))
+		{
+			Model->GetBoneTrackTransforms(BoneName, Keys);
+		}
+		else
+		{
+			const FTransform RefPose = Sequence->GetSkeleton()->GetReferenceSkeleton().GetRefBonePose()[RefBoneIndex];
+			Keys.Init(RefPose, Model->GetNumberOfKeys());
+		}
+		return Keys;
+	}
+}
+
+FRotator UWB_RetargetToolset::GetBoneLocalRotation(UAnimSequence* Sequence, FName BoneName, int32 Frame)
+{
+	if (!Sequence || !Sequence->GetSkeleton())
+	{
+		Raise(TEXT("Sequence must not be null and must have a skeleton."));
+		return FRotator::ZeroRotator;
+	}
+	const int32 RefBoneIndex = Sequence->GetSkeleton()->GetReferenceSkeleton().FindBoneIndex(BoneName);
+	if (RefBoneIndex == INDEX_NONE)
+	{
+		Raise(FString::Printf(TEXT("Bone '%s' is not in the skeleton of '%s'."), *BoneName.ToString(), *Sequence->GetName()));
+		return FRotator::ZeroRotator;
+	}
+
+	const TArray<FTransform> Keys = WB_RetargetToolset::GetBoneKeys(Sequence, BoneName, RefBoneIndex);
+	if (!Keys.IsValidIndex(Frame))
+	{
+		Raise(FString::Printf(TEXT("Frame %d is outside '%s' (%d keys)."), Frame, *Sequence->GetName(), Keys.Num()));
+		return FRotator::ZeroRotator;
+	}
+	return Keys[Frame].Rotator();
+}
+
+void UWB_RetargetToolset::OffsetBoneRotation(UAnimSequence* Sequence, FName BoneName, FRotator Offset, int32 StartFrame, int32 EndFrame, int32 BlendInFrames, int32 BlendOutFrames)
+{
+	if (!Sequence || !Sequence->GetSkeleton())
+	{
+		Raise(TEXT("Sequence must not be null and must have a skeleton."));
+		return;
+	}
+	const int32 RefBoneIndex = Sequence->GetSkeleton()->GetReferenceSkeleton().FindBoneIndex(BoneName);
+	if (RefBoneIndex == INDEX_NONE)
+	{
+		Raise(FString::Printf(TEXT("Bone '%s' is not in the skeleton of '%s'."), *BoneName.ToString(), *Sequence->GetName()));
+		return;
+	}
+
+	TArray<FTransform> Keys = WB_RetargetToolset::GetBoneKeys(Sequence, BoneName, RefBoneIndex);
+	const int32 LastKey = Keys.Num() - 1;
+	const int32 End = EndFrame < 0 ? LastKey : EndFrame;
+	if (StartFrame < 0 || StartFrame > End || End > LastKey)
+	{
+		Raise(FString::Printf(TEXT("Frame range %d..%d is outside '%s' (keys 0..%d)."), StartFrame, End, *Sequence->GetName(), LastKey));
+		return;
+	}
+
+	const FQuat OffsetQuat = Offset.Quaternion();
+	TArray<FVector> Positions;
+	TArray<FQuat> Rotations;
+	TArray<FVector> Scales;
+	for (int32 Key = 0; Key < Keys.Num(); ++Key)
+	{
+		double Weight = 0.0;
+		if (Key >= StartFrame && Key <= End)
+		{
+			Weight = 1.0;
+			if (BlendInFrames > 0)
+			{
+				Weight = FMath::Min(Weight, double(Key - StartFrame + 1) / double(BlendInFrames + 1));
+			}
+			if (BlendOutFrames > 0)
+			{
+				Weight = FMath::Min(Weight, double(End - Key + 1) / double(BlendOutFrames + 1));
+			}
+		}
+		const FQuat Rotation = Keys[Key].GetRotation() * FQuat::Slerp(FQuat::Identity, OffsetQuat, Weight);
+		Positions.Add(Keys[Key].GetLocation());
+		Rotations.Add(Rotation.GetNormalized());
+		Scales.Add(Keys[Key].GetScale3D());
+	}
+
+	IAnimationDataController& Controller = Sequence->GetController();
+	IAnimationDataController::FScopedBracket Bracket(Controller, NSLOCTEXT("WB_RetargetToolset", "OffsetBoneRotation", "Offset bone rotation"));
+	if (!Sequence->GetDataModel()->IsValidBoneTrackName(BoneName))
+	{
+		Controller.AddBoneCurve(BoneName);
+	}
+	Controller.SetBoneTrackKeys(BoneName, Positions, Rotations, Scales);
 }
