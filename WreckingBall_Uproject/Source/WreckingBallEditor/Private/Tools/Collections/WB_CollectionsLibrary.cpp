@@ -514,10 +514,10 @@ FWB_CollectionsReport UWB_CollectionsLibrary::Run(bool bApply)
 	{
 		const FName MapsName = NameOf.FindRef(MapsTag);
 		Want(MapsTag);
-		const FName GroupNames[] = { TEXT("Official"), TEXT("Gyms"), TEXT("Unsorted") };
+		const FName GroupNames[] = { TEXT("Official"), TEXT("Gyms"), TEXT("Templates"), TEXT("Unsorted") };
 		for (const FString& MapPackage : UWB_GymSelectorLibrary::GetLevelList())
 		{
-			const int32 Group = static_cast<int32>(UWB_GymSelectorLibrary::GetLevelCategory(FPackageName::GetShortName(MapPackage)));
+			const int32 Group = static_cast<int32>(UWB_GymSelectorLibrary::GetLevelCategoryOfPackage(MapPackage));
 			const FName Name = UsedNames.Contains(GroupNames[Group]) ? FName(*FString::Printf(TEXT("Maps_%s"), *GroupNames[Group].ToString())) : GroupNames[Group];
 			Expected.FindOrAdd(Name).Add(FSoftObjectPath(MapPackage + TEXT(".") + FPackageName::GetShortName(MapPackage)));
 			ParentOf.Add(Name, MapsName);
@@ -548,7 +548,7 @@ FWB_CollectionsReport UWB_CollectionsLibrary::Run(bool bApply)
 	}
 	if (MapsTag.IsValid() && !IsEnabled(MapsTag))
 	{
-		for (const TCHAR* Group : { TEXT("Official"), TEXT("Gyms"), TEXT("Unsorted"), TEXT("Maps_Official"), TEXT("Maps_Gyms"), TEXT("Maps_Unsorted") })
+		for (const TCHAR* Group : { TEXT("Official"), TEXT("Gyms"), TEXT("Templates"), TEXT("Unsorted"), TEXT("Maps_Official"), TEXT("Maps_Gyms"), TEXT("Maps_Templates"), TEXT("Maps_Unsorted") })
 		{
 			if (!UsedNames.Contains(FName(Group)) && Container.CollectionExists(FName(Group), Local))
 			{

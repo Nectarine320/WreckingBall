@@ -310,11 +310,25 @@ TArray<FString> UWB_GymSelectorLibrary::GetLevelList()
 	{
 		const FString NameA = FPackageName::GetShortName(A);
 		const FString NameB = FPackageName::GetShortName(B);
-		const EWB_LevelCategory CategoryA = GetLevelCategory(NameA);
-		const EWB_LevelCategory CategoryB = GetLevelCategory(NameB);
+		const EWB_LevelCategory CategoryA = GetLevelCategoryOfPackage(A);
+		const EWB_LevelCategory CategoryB = GetLevelCategoryOfPackage(B);
 		return CategoryA != CategoryB ? CategoryA < CategoryB : NameA.Compare(NameB, ESearchCase::IgnoreCase) < 0;
 	});
 	return Maps;
+}
+
+EWB_LevelCategory UWB_GymSelectorLibrary::GetLevelCategoryOfPackage(const FString& MapPackage)
+{
+	const TSoftObjectPtr<UWorld>& Template = GetDefault<UWB_ToolsDeveloperSettings>()->LevelTemplate;
+	if (!Template.IsNull())
+	{
+		const FString TemplateFolder = FPackageName::GetLongPackagePath(Template.ToSoftObjectPath().GetLongPackageName()) + TEXT("/");
+		if (MapPackage.StartsWith(TemplateFolder))
+		{
+			return EWB_LevelCategory::Template;
+		}
+	}
+	return GetLevelCategory(FPackageName::GetShortName(MapPackage));
 }
 
 EWB_LevelCategory UWB_GymSelectorLibrary::GetLevelCategory(const FString& MapName)

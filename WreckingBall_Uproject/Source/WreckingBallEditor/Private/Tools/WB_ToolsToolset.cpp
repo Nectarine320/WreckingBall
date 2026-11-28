@@ -2,7 +2,10 @@
 
 #include "Tools/WB_ToolsToolset.h"
 
+#include "Editor.h"
 #include "Gym/WB_GymDefinition.h"
+#include "HAL/FileManager.h"
+#include "Misc/Paths.h"
 
 #include UE_INLINE_GENERATED_CPP_BY_NAME(WB_ToolsToolset)
 
@@ -64,4 +67,29 @@ FWB_CollectionsReport UWB_ToolsToolset::PreviewCollections()
 FWB_CollectionsReport UWB_ToolsToolset::UpdateCollections()
 {
 	return UWB_CollectionsLibrary::UpdateCollections();
+}
+
+FWB_NewLevelCheck UWB_ToolsToolset::CheckNewLevel(const FString& Code, const FString& Name)
+{
+	return UWB_LevelCreatorLibrary::CheckNewLevel(Code, Name);
+}
+
+FString UWB_ToolsToolset::CreateLevel(const FString& Code, const FString& Name)
+{
+	return UWB_LevelCreatorLibrary::CreateLevel(Code, Name, /*bPromptSave=*/false);
+}
+
+bool UWB_ToolsToolset::RunWBToolsScript(const FString& ScriptName)
+{
+	// A bare file name of the project's WB Tools scripts folder: no path, no other folder.
+	if (ScriptName.IsEmpty() || ScriptName.Contains(TEXT("/")) || ScriptName.Contains(TEXT("\\")) || ScriptName.Contains(TEXT("..")) || !ScriptName.EndsWith(TEXT(".py")))
+	{
+		return false;
+	}
+	const FString Script = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Python/WBTools") / ScriptName);
+	if (!GEditor || !IFileManager::Get().FileExists(*Script))
+	{
+		return false;
+	}
+	return GEditor->Exec(nullptr, *FString::Printf(TEXT("py \"%s\""), *Script));
 }

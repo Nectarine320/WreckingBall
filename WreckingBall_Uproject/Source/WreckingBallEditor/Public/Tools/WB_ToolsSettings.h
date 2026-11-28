@@ -10,6 +10,7 @@
 #include "WB_ToolsSettings.generated.h"
 
 class AGameModeBase;
+class UWorld;
 class AWB_GymSettings;
 class UWB_SortLevelRules;
 class UWB_ToolsMenuData;
@@ -59,6 +60,22 @@ public:
 	/** Regular expression of a gym level name, searched in the map name: "^[Ll][Vv]_[A-Z][A-Z][A-Z]_" (Lv_ + 3 capital letters + _, e.g. LV_AAA_Gym_SoccerField). Shown second; the other maps are Unsorted. Do not use braces like {3}: the .ini file drops them. */
 	UPROPERTY(Config, EditAnywhere, Category = "Gym|Levels")
 	FString GymLevelPattern;
+
+	/** Template level of WB Tools > Level > Create Level (Lv_Template): its sub-levels are duplicated for every new level. Its folder is the Templates group of Gym Mode > Levels. */
+	UPROPERTY(Config, EditAnywhere, Category = "Create Level")
+	TSoftObjectPtr<UWorld> LevelTemplate;
+
+	/** Folder of the official levels (code of 3 digits), e.g. /Game/Level/Game. Gyms (code of 3 letters) go in Gym Maps Folder. */
+	UPROPERTY(Config, EditAnywhere, Category = "Create Level", meta = (ContentDir))
+	FDirectoryPath GameMapsFolder;
+
+	/** Start of every new level name: "Lv_" gives Lv_100_Bungalow. */
+	UPROPERTY(Config, EditAnywhere, Category = "Create Level")
+	FString LevelNamePrefix;
+
+	/** Sub-folder of a new level that receives its sub-levels, e.g. SubLevels. */
+	UPROPERTY(Config, EditAnywhere, Category = "Create Level")
+	FString SubLevelsFolderName;
 
 	/** Root of the collection tags (Collection). Its direct children are the master tags shown as checkboxes in WB Tools > Content > Collections. */
 	UPROPERTY(Config, EditAnywhere, Category = "Collections")

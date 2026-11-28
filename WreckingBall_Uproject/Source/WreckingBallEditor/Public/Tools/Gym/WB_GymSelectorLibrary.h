@@ -17,6 +17,8 @@ enum class EWB_LevelCategory : uint8
 	Official,
 	/** Gym map (Lv_ + 3 capital letters + _). */
 	Gym,
+	/** Template level of Create Level, and the other maps of its folder. */
+	Template,
 	/** Any other map (art tests, old gyms...). */
 	Unsorted
 };
@@ -98,6 +100,10 @@ public:
 	/** Group of a map from its name: Official, Gym or Unsorted (patterns in Project Settings > Editor > WB Tools > Gym > Levels). */
 	UFUNCTION(BlueprintPure, Category = "WB Tools|Gym")
 	static EWB_LevelCategory GetLevelCategory(const FString& MapName);
+
+	/** Group of a map from its package: Template when it is in the folder of the level template, else from its name (GetLevelCategory). */
+	UFUNCTION(BlueprintPure, Category = "WB Tools|Gym")
+	static EWB_LevelCategory GetLevelCategoryOfPackage(const FString& MapPackage);
 
 	/** Maps of the project (/Game) whose name passes the Levels filters of Project Settings > Editor > WB Tools, sorted by group (Official, Gym, Unsorted), then by name. */
 	UFUNCTION(BlueprintCallable, Category = "WB Tools|Gym")

@@ -286,7 +286,7 @@ void SWB_GymSelectorPanel::RefreshLevels()
 	{
 		TSharedPtr<FWB_LevelListItem> Item = MakeShared<FWB_LevelListItem>();
 		Item->MapPackage = MapPackage;
-		Item->Category = UWB_GymSelectorLibrary::GetLevelCategory(FPackageName::GetShortName(MapPackage));
+		Item->Category = UWB_GymSelectorLibrary::GetLevelCategoryOfPackage(MapPackage);
 		TArray<FString> SubLevels = UWB_GymSelectorLibrary::GetSubLevels(MapPackage);
 		for (FString& SubLevel : SubLevels)
 		{
@@ -312,6 +312,7 @@ void SWB_GymSelectorPanel::ApplyLevelFilter()
 		{
 			const FText Name = Header->Category == EWB_LevelCategory::Official ? LOCTEXT("Official", "Official levels")
 				: Header->Category == EWB_LevelCategory::Gym ? LOCTEXT("GymLevels", "Gyms")
+				: Header->Category == EWB_LevelCategory::Template ? LOCTEXT("Templates", "Templates (Create Level)")
 				: LOCTEXT("Unsorted", "Unsorted");
 			Header->Header = FText::Format(LOCTEXT("HeaderCount", "{0}  ({1})"), Name, Count);
 		}

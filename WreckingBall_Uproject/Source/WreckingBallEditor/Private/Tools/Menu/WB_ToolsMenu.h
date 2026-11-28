@@ -22,4 +22,5 @@ public:
 	static const FName DebugKeysTabId;
 	static const FName CollectionsTabId;
 	static const FName RetargetTabId;
+	static const FName LevelCreatorTabId;
 };

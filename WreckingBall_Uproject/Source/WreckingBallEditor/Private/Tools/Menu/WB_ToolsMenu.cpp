@@ -13,6 +13,7 @@
 #include "ToolMenus.h"
 #include "Retarget/SWB_RetargetPanel.h"
 #include "Tools/Collections/SWB_CollectionsPanel.h"
+#include "Tools/LevelCreator/SWB_LevelCreatorPanel.h"
 #include "Tools/DebugKeys/SWB_DebugKeysPanel.h"
 #include "Tools/Gym/SWB_GymSelectorPanel.h"
 #include "Tools/Menu/WB_ToolsMenuData.h"
@@ -29,6 +30,7 @@ const FName FWB_ToolsMenu::GymTabId(TEXT("WBTools_Gym"));
 const FName FWB_ToolsMenu::DebugKeysTabId(TEXT("WBTools_DebugKeys"));
 const FName FWB_ToolsMenu::CollectionsTabId(TEXT("WBTools_Collections"));
 const FName FWB_ToolsMenu::RetargetTabId(TEXT("WBTools_Retarget"));
+const FName FWB_ToolsMenu::LevelCreatorTabId(TEXT("WBTools_LevelCreator"));
 
 namespace WBToolsMenu
 {
@@ -83,6 +85,11 @@ namespace WBToolsMenu
 	void FillMenu(UToolMenu* Menu)
 	{
 		FToolMenuSection& Level = Menu->AddSection(TEXT("Level"), LOCTEXT("Level", "Level"));
+		Level.AddMenuEntry(TEXT("CreateLevel"),
+			LOCTEXT("CreateLevel", "Create Level"),
+			LOCTEXT("CreateLevelTip", "Creates a level ready for a match from the template (Lv_Template): code of 3 digits (official) or 3 letters (gym), and a name."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateStatic(&FWB_ToolsMenu::OpenTab, FWB_ToolsMenu::LevelCreatorTabId)));
 		Level.AddMenuEntry(TEXT("SortLevel"),
 			LOCTEXT("SortLevel", "Sort Level"),
 			LOCTEXT("SortLevelTip", "Puts every actor of the open map in its Outliner folder and sub-level (rules in Project Settings > Editor > WB Tools)."),
@@ -165,6 +172,10 @@ void FWB_ToolsMenu::Register()
 		.SetDisplayName(LOCTEXT("RetargetTab", "Retarget"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(LevelCreatorTabId, FOnSpawnTab::CreateStatic(&SpawnPanelTab<SWB_LevelCreatorPanel>))
+		.SetDisplayName(LOCTEXT("LevelCreatorTab", "Create Level"))
+		.SetMenuType(ETabSpawnerMenuType::Hidden);
+
 	StartupHandle = UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateStatic(&ExtendMainMenu));
 }
 
@@ -181,6 +192,7 @@ void FWB_ToolsMenu::Unregister()
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(DebugKeysTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CollectionsTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(RetargetTabId);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(LevelCreatorTabId);
 	}
 }
 

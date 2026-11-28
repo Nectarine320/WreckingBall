@@ -6,6 +6,7 @@
 #include "Tools/Collections/WB_CollectionsLibrary.h"
 #include "Tools/DebugKeys/WB_DebugKeysLibrary.h"
 #include "Tools/Gym/WB_GymSelectorLibrary.h"
+#include "Tools/LevelCreator/WB_LevelCreatorLibrary.h"
 #include "Tools/SortLevel/WB_SortLevelLibrary.h"
 #include "ToolsetRegistry/ToolsetDefinition.h"
 
@@ -64,6 +65,23 @@ public:
 	 * @param NodeGuid Node of the entry (GetDebugKeys).
 	 * @param Description One line that says what the key does.
 	 */
+	/** Checks a level code (3 digits = official, 3 letters = gym) and name, and lists the packages Create Level would make. */
+	UFUNCTION(meta = (AICallable), Category = "WB Tools|Create Level")
+	static FWB_NewLevelCheck CheckNewLevel(const FString& Code, const FString& Name);
+
+	/** Creates a level from the template and opens it (never overwrites). Save the open map before calling: no save prompt here. Returns the report. */
+	UFUNCTION(meta = (AICallable), Category = "WB Tools|Create Level")
+	static FString CreateLevel(const FString& Code, const FString& Name);
+
+	/**
+	 * Runs one of the project's WB Tools Python scripts in the editor (Content/Python/WBTools/<ScriptName>), for the steps that need the
+	 * open editor (moving actors between levels...). Only the files of that folder can run.
+	 * @param ScriptName File name in Content/Python/WBTools, e.g. build_level_template.py.
+	 * @return True when the script was found and started (its log lines are in the Output Log).
+	 */
+	UFUNCTION(meta = (AICallable), Category = "WB Tools|Scripts")
+	static bool RunWBToolsScript(const FString& ScriptName);
+
 	/** Collection tags written on an asset itself (Blueprint or Data Asset), without the inherited ones. */
 	UFUNCTION(meta = (AICallable), Category = "WB Tools|Collections")
 	static FGameplayTagContainer GetCollectionTags(UObject* Asset);

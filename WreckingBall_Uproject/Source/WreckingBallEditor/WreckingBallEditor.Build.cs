@@ -32,5 +32,8 @@ public class WreckingBallEditor : ModuleRules
 
 		// WB Tools > Animation > Retarget: asset pickers (SObjectPropertyEntryBox).
 		PrivateDependencyModuleNames.AddRange(new string[] { "PropertyEditor", "ContentBrowserData" });
+
+		// WB Tools > Level > Create Level: builds the navigation of the new level.
+		PrivateDependencyModuleNames.Add("NavigationSystem");
 	}
 }
