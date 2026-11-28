@@ -13,7 +13,7 @@ enum class EWB_SoccerRole : uint8
 	Attacker,
 	/** Stays in the defensive zone between the ball and its goal; supports the carrier when the team has the ball. */
 	Defender,
-	/** Nearest to its goal: guards it; moves up as the last man when the team has the ball. */
+	/** Nearest to its goal (team of 2 or more): behavior AI.Behavior.Goalkeeping (guards the goal against threats, builds a shield of objects). */
 	Goalkeeper
 };
 

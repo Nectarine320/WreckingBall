@@ -41,6 +41,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
 	FWB_OnPlayerCommand OnGrabCommand;
 
+	/** Drop command: lets go of the held physics object without throwing it. Bind to the DropHeldItem event of BPC_HeldObjectActions. */
+	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
+	FWB_OnPlayerCommand OnDropCommand;
+
+	/**
+	 * Sprint command (bots): SetSprinting(true) calls this event of the owner (BP_SoccerPlayer: RequestSprintStart, the same event as the sprint input,
+	 * so the energy, the state rules and the bar apply). Technical. Missing on the owner: a warning is logged and the bot does not sprint.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Sprint")
+	FName SprintStartEvent = TEXT("RequestSprintStart");
+
+	/** Sprint command (bots): SetSprinting(false) calls this event of the owner (BP_SoccerPlayer: RequestSprintStop). Technical. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "PlayerCommand|Sprint")
+	FName SprintStopEvent = TEXT("RequestSprintStop");
+
 	/** Kick / throw press: starts the charge. Bind to RequestKickOrThrow. */
 	UPROPERTY(BlueprintAssignable, Category = "PlayerCommand")
 	FWB_OnPlayerCommand OnKickPressCommand;
@@ -165,6 +180,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
 	void Grab();
 
+	/** Fires OnDropCommand. */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
+	void Drop();
+
+	/** Calls SprintStartEvent (true) or SprintStopEvent (false) on the owner when the wish changes (nothing is sent twice in a row). */
+	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
+	void SetSprinting(bool bSprint);
+
+	/** True since the last SetSprinting(true). The sprint itself can still be refused by the character (energy, state). */
+	UFUNCTION(BlueprintPure, Category = "PlayerCommand")
+	bool IsSprintRequested() const { return bSprintRequested; }
+
 	/** Fires OnKickPressCommand. */
 	UFUNCTION(BlueprintCallable, Category = "PlayerCommand")
 	void KickPress();
@@ -239,6 +266,10 @@ public:
 
 private:
 	bool bMoving = false;
+
+	/** Last wish sent by SetSprinting, and the missing sprint event already reported. */
+	bool bSprintRequested = false;
+	bool bWarnedNoSprintEvent = false;
 
 	/** Components of the owner, found once (read by the charge Tick and the pass and Dash checks). */
 	mutable TWeakObjectPtr<UWB_PlayerStateComponent> CachedPlayerState;

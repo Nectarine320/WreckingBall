@@ -92,3 +92,8 @@ UWB_TeamGoalComponent* UWB_TeamGoalComponent::FindGoalToAttack(const UObject* Wo
 	}
 	return Best;
 }
+
+FVector UWB_TeamGoalComponent::GetMouthAxis() const
+{
+	return FVector::CrossProduct(FVector::UpVector, GetFieldDirection()).GetSafeNormal();
+}

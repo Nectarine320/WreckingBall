@@ -1,9 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "WB_GrabLibrary.generated.h"
 
+class AActor;
 class UCapsuleComponent;
 class UPrimitiveComponent;
 class USkeletalMeshComponent;
@@ -11,6 +13,7 @@ class USkeletalMeshComponent;
 /**
  * Helpers for held objects (BPC_GrabObject): during a throw windup, a large object follows the point between the hands of the
  * thrower along an arc instead of staying at its carry position.
+ * Object size (devis gardien): the size class (Object.Size.*) of a physics object, read from the SizeTag of its PDA_PhysicsProfile, and the NoGrab exclusion.
  */
 UCLASS()
 class WRECKINGBALL_API UWB_GrabLibrary : public UBlueprintFunctionLibrary
@@ -50,4 +53,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Grab")
 	static FVector GetOverheadThrowTarget(FVector CarryTarget, const UCapsuleComponent* Capsule, const UPrimitiveComponent* Held, float Charge,
 		float ArcHeight = 25.f, float OverheadHeight = 15.f, float OverheadForward = 10.f, float ClearanceMargin = 5.f);
+
+	/**
+	 * True when Actor must never be grabbed: it has the actor tag NoGrabTag (the same tag BPC_HeldObjectActions refuses). Checked before the size,
+	 * so an excluded object is never even sized. None: true.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Grab|Size")
+	static bool IsGrabExcluded(const AActor* Actor, FName NoGrabTag = "NoGrab");
+
+	/**
+	 * Size class (Object.Size.*) of a physics object: the Gameplay Tag SizeVariable of the profile returned by its ProfileFunction
+	 * (GetPhysicsProfile, Blueprint interface of the impact sources). Empty tag when the actor, the function, the profile or the variable is missing,
+	 * or when the size is not set in the profile.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Grab|Size")
+	static FGameplayTag GetObjectSizeTag(AActor* Actor, FName ProfileFunction = "GetPhysicsProfile", FName SizeVariable = "SizeTag");
+
+	/** Rank of a size class: Tiny 0, Small 1, Medium 2, Large 3, XLarge 4. -1 for an empty or unknown tag. */
+	UFUNCTION(BlueprintPure, Category = "Grab|Size")
+	static int32 GetObjectSizeRank(FGameplayTag SizeTag);
 };

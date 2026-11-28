@@ -298,37 +298,45 @@ void UWB_TeamCoordinatorComponent::EvaluateRoles(bool bIgnoreHoldTime)
 		return nullptr;
 	};
 
-	// ---- Attacker: the carrier, else the nearest to the ball ----
+	// ---- Goalkeeper first (devis gardien): the nearest to its goal. Never the Attacker, never the presser. ----
+	// Only in a team of two or more (a team of one has no Goalkeeper: a single bot is a debug case, given a forced role).
+	// The Goalkeeper that caught the ball keeps its role while it clears it.
+	APawn* Goalkeeper = nullptr;
+	double GoalkeeperSince = 0.0;
+	APawn* PreviousGoalkeeper = PreviousWithRole(EWB_SoccerRole::Goalkeeper, GoalkeeperSince);
+	if (OwnGoal && !bHasForcedGoalkeeper && Members.Num() >= 2)
+	{
+		auto IsCandidate = [Carrier, PreviousGoalkeeper](const APawn* P) { return P != Carrier || P == PreviousGoalkeeper; };
+		TArray<APawn*> Candidates = Able.FilterByPredicate(IsCandidate);
+		if (Candidates.IsEmpty())
+		{
+			Candidates = Free.FilterByPredicate(IsCandidate);
+		}
+		const FVector GoalLocation = OwnGoal->GetAimLocation();
+		Goalkeeper = PickWithHysteresis(Candidates, PreviousGoalkeeper, GoalkeeperSince, [&GoalLocation](const APawn* P) { return Dist2D(P, GoalLocation); }, Now, bIgnoreHoldTime);
+	}
+
+	// ---- Attacker: the carrier, else the nearest to the ball, among the others ----
 	APawn* Attacker = nullptr;
 	double AttackerSince = 0.0;
 	APawn* PreviousAttacker = PreviousWithRole(EWB_SoccerRole::Attacker, AttackerSince);
-	if (bTeamHasBall && Free.Contains(Carrier))
+	TArray<APawn*> FieldPlayers = Able.FilterByPredicate([Goalkeeper](const APawn* P) { return P != Goalkeeper; });
+	if (FieldPlayers.IsEmpty())
+	{
+		FieldPlayers = Free.FilterByPredicate([Goalkeeper](const APawn* P) { return P != Goalkeeper; });
+	}
+	if (bTeamHasBall && Free.Contains(Carrier) && Carrier != Goalkeeper)
 	{
 		Attacker = Carrier;
 	}
 	else if (Ball)
 	{
 		const FVector BallLocation = Ball->GetActorLocation();
-		Attacker = PickWithHysteresis(Able, PreviousAttacker, AttackerSince, [&BallLocation](const APawn* P) { return Dist2D(P, BallLocation); }, Now, bIgnoreHoldTime);
+		Attacker = PickWithHysteresis(FieldPlayers, PreviousAttacker, AttackerSince, [&BallLocation](const APawn* P) { return Dist2D(P, BallLocation); }, Now, bIgnoreHoldTime);
 	}
 	else
 	{
-		Attacker = Free.Contains(PreviousAttacker) ? PreviousAttacker : (Able.IsEmpty() ? nullptr : Able[0]);
-	}
-
-	// ---- Goalkeeper: the nearest to its goal among the others ----
-	APawn* Goalkeeper = nullptr;
-	if (OwnGoal && !bHasForcedGoalkeeper)
-	{
-		TArray<APawn*> Candidates = Able.FilterByPredicate([Attacker](const APawn* P) { return P != Attacker; });
-		if (Candidates.IsEmpty())
-		{
-			Candidates = Free.FilterByPredicate([Attacker](const APawn* P) { return P != Attacker; });
-		}
-		double GoalkeeperSince = 0.0;
-		APawn* PreviousGoalkeeper = PreviousWithRole(EWB_SoccerRole::Goalkeeper, GoalkeeperSince);
-		const FVector GoalLocation = OwnGoal->GetAimLocation();
-		Goalkeeper = PickWithHysteresis(Candidates, PreviousGoalkeeper, GoalkeeperSince, [&GoalLocation](const APawn* P) { return Dist2D(P, GoalLocation); }, Now, bIgnoreHoldTime);
+		Attacker = FieldPlayers.Contains(PreviousAttacker) ? PreviousAttacker : (FieldPlayers.IsEmpty() ? nullptr : FieldPlayers[0]);
 	}
 
 	// ---- Opponent attacker: their carrier, else the Attacker of their coordinator, else the opponent nearest to the ball ----
@@ -390,7 +398,7 @@ void UWB_TeamCoordinatorComponent::EvaluateRoles(bool bIgnoreHoldTime)
 		}
 		else
 		{
-			// A human Attacker (or the team holds the ball): a Defender bot presses, a Goalkeeper bot only when no Defender bot can.
+			// A human Attacker (or the team holds the ball): a Defender bot presses. Never the Goalkeeper (devis gardien: it is passive).
 			TArray<APawn*> Candidates;
 			for (const FWB_TeamRoleAssignment& Entry : NewAssignments)
 			{
@@ -398,10 +406,6 @@ void UWB_TeamCoordinatorComponent::EvaluateRoles(bool bIgnoreHoldTime)
 				{
 					Candidates.Add(Entry.Member);
 				}
-			}
-			if (Candidates.IsEmpty() && Goalkeeper != Carrier && GetBot(Goalkeeper) && !IsIncapacitated(Goalkeeper))
-			{
-				Candidates.Add(Goalkeeper);
 			}
 			const FVector TargetLocation = NewOpponentAttacker->GetActorLocation();
 			NewPresser = PickWithHysteresis(Candidates, Presser.Get(), PresserSince, [&TargetLocation](const APawn* P) { return Dist2D(P, TargetLocation); }, Now, bIgnoreHoldTime);

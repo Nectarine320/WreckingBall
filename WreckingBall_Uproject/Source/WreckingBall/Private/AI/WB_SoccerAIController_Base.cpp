@@ -28,6 +28,8 @@
 #include "Player/State/WB_PlayerStateTags.h"
 #include "AI/WB_SoccerAITags.h"
 #include "Match/Roster/WB_TeamRosterComponent.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AISenseConfig_Sight.h"
 
 namespace
 {
@@ -71,7 +73,11 @@ bool AWB_SoccerAIController_Base::IsIntentAllowed(EWB_SoccerAIIntent Intent) con
 	case EWB_SoccerAIIntent::Press:        return Profile->bAllowPress;
 	case EWB_SoccerAIIntent::Defend:       return Profile->bAllowDefend;
 	case EWB_SoccerAIIntent::GuardGoal:    return Profile->bAllowGuardGoal;
-	case EWB_SoccerAIIntent::LastMan:      return Profile->bAllowLastMan;
+	case EWB_SoccerAIIntent::KeeperReturn: return Profile->bAllowGuardGoal;
+	case EWB_SoccerAIIntent::KeeperPatrol:
+	case EWB_SoccerAIIntent::KeeperFetch:
+	case EWB_SoccerAIIntent::KeeperPlace:
+	case EWB_SoccerAIIntent::KeeperSupporter: return Profile->bAllowGoalkeeperShield;
 	case EWB_SoccerAIIntent::SupportOpen:  return Profile->bAllowSupportOpen;
 	case EWB_SoccerAIIntent::ReceivePass:  return Profile->bAllowReceivePass;
 	default:                             return true;
@@ -84,6 +90,21 @@ AWB_SoccerAIController_Base::AWB_SoccerAIController_Base()
 	bWantsPlayerState = false;
 	// The bot turns its pawn itself (SetFacingDirection); the controller rotation follows the pawn.
 	bSetControlRotationFromPawnOrientation = true;
+
+	// Sight of every bot (devis gardien): configured from the profile at possession and at each role change (ApplySightSettings).
+	Perception = CreateDefaultSubobject<UAIPerceptionComponent>(TEXT("Perception"));
+	SightConfig = CreateDefaultSubobject<UAISenseConfig_Sight>(TEXT("SightConfig"));
+	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
+	SightConfig->DetectionByAffiliation.bDetectNeutrals = true;
+	SightConfig->DetectionByAffiliation.bDetectFriendlies = true;
+	Perception->ConfigureSense(*SightConfig);
+	Perception->SetDominantSense(UAISense_Sight::StaticClass());
+	SetPerceptionComponent(*Perception);
+}
+
+FGameplayTag AWB_SoccerAIController_Base::GetBehaviorTag() const
+{
+	return IsGoalkeeping() ? WBTags::AI_Behavior_Goalkeeping : FGameplayTag();
 }
 
 const UWB_SoccerAIProfile* AWB_SoccerAIController_Base::GetActiveProfile() const
@@ -202,8 +223,18 @@ void AWB_SoccerAIController_Base::SetTeamRole(EWB_SoccerRole InRole, EWB_TeamSit
 		PressTarget.Reset();
 		return;
 	}
+	// The Goalkeeper never presses (devis gardien), whatever it is given.
+	const bool bRoleChanged = CurrentRole != InRole;
 	CurrentRole = InRole;
-	PressTarget = InPressTarget;
+	PressTarget = InRole == EWB_SoccerRole::Goalkeeper ? nullptr : InPressTarget;
+	if (bRoleChanged)
+	{
+		ApplySightSettings();
+		if (InRole != EWB_SoccerRole::Goalkeeper)
+		{
+			SetKeeperTask(EWB_KeeperTask::None);
+		}
+	}
 }
 
 FGameplayTag AWB_SoccerAIController_Base::GetForcedRole() const
@@ -220,12 +251,22 @@ bool AWB_SoccerAIController_Base::ChooseForcedIntent(const FGameplayTag& ForcedR
 	{
 		return false;
 	}
-	CurrentRole = bGoalkeeper ? EWB_SoccerRole::Goalkeeper : EWB_SoccerRole::Attacker;
+	const EWB_SoccerRole RoleOfForced = bGoalkeeper ? EWB_SoccerRole::Goalkeeper : EWB_SoccerRole::Attacker;
+	if (CurrentRole != RoleOfForced)
+	{
+		CurrentRole = RoleOfForced;
+		ApplySightSettings();
+	}
 	PressTarget.Reset();
 
+	if (bGoalkeeper)
+	{
+		OutIntent = ChooseGoalkeeperIntent();
+		return true;
+	}
 	if (IsHoldingBall(PlayerStateComp))
 	{
-		OutIntent = bGoalkeeper ? EWB_SoccerAIIntent::ClearBall : EWB_SoccerAIIntent::KeepAway;
+		OutIntent = EWB_SoccerAIIntent::KeepAway;
 		return true;
 	}
 	if (PlayerStateComp && PlayerStateComp->IsHoldingAnything())
@@ -236,22 +277,6 @@ bool AWB_SoccerAIController_Base::ChooseForcedIntent(const FGameplayTag& ForcedR
 	if (RefreshIncomingPass() && IsIntentAllowed(EWB_SoccerAIIntent::ReceivePass))
 	{
 		OutIntent = EWB_SoccerAIIntent::ReceivePass;
-		return true;
-	}
-
-	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	if (bGoalkeeper)
-	{
-		// Never leaves its goal (no LastMan): guards it, and claims a free ball inside its zone.
-		OutIntent = EWB_SoccerAIIntent::GuardGoal;
-		if (Profile->bGoalkeeperClaimsBallInZone && CachedBall.IsValid() && !FindBallCarrier() && IsIntentAllowed(EWB_SoccerAIIntent::SeekBall))
-		{
-			const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone();
-			if (Zone && Zone->IsLocationInside(CachedBall->GetActorLocation()))
-			{
-				OutIntent = EWB_SoccerAIIntent::SeekBall;
-			}
-		}
 		return true;
 	}
 
@@ -353,6 +378,10 @@ void AWB_SoccerAIController_Base::OnPossess(APawn* InPawn)
 	Commands = InPawn ? InPawn->FindComponentByClass<UWB_PlayerCommandComponent>() : nullptr;
 	DiveComp = InPawn ? InPawn->FindComponentByClass<UWB_PlayerDiveComponent>() : nullptr;
 	ResetBrain();
+	SetKeeperTask(EWB_KeeperTask::None);
+	ShieldObjects.Reset();
+	SeenObjects.Reset();
+	ApplySightSettings();
 
 	if (!Commands)
 	{
@@ -365,6 +394,7 @@ void AWB_SoccerAIController_Base::OnUnPossess()
 	if (Commands)
 	{
 		Commands->StopMoving();
+		Commands->SetSprinting(false);
 	}
 	// A stance started by the bot has no button to release it: end it before a human takes the character.
 	if (DiveComp && DiveComp->IsDefending())
@@ -379,6 +409,8 @@ void AWB_SoccerAIController_Base::OnUnPossess()
 	CurrentRole = EWB_SoccerRole::None;
 	PressTarget.Reset();
 	ResetBrain();
+	SetKeeperTask(EWB_KeeperTask::None);
+	ShieldObjects.Reset();
 	Super::OnUnPossess();
 }
 
@@ -390,6 +422,10 @@ void AWB_SoccerAIController_Base::ResetBrain()
 	bCharging = false;
 	ChargeElapsed = 0.f;
 	bAimJitterDrawn = false;
+	bChargeFacingOverride = false;
+	bShotActive = false;
+	bDiveSent = false;
+	ThreatHistory.Reset();
 	SupportSpotIndex = -1;
 	NextSupportSpotTime = 0.0;
 	SupportAheadUntil = 0.0;
@@ -404,6 +440,13 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 	if (ChooseForcedIntent(GetForcedRole(), ForcedIntent))
 	{
 		return ForcedIntent;
+	}
+
+	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
+	// The Goalkeeper has its own brain (devis gardien), the held object and the ball included.
+	if (Profile && Profile->bUseTeamRoles && CurrentRole == EWB_SoccerRole::Goalkeeper)
+	{
+		return ChooseGoalkeeperIntent();
 	}
 
 	if (PlayerStateComp && PlayerStateComp->IsHoldingAnything())
@@ -422,7 +465,6 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 		FilteredIntent = EWB_SoccerAIIntent::ReceivePass;
 	}
 
-	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
 	if (Profile && Profile->bUseTeamRoles && CurrentRole != EWB_SoccerRole::None)
 	{
 		if (CurrentRole != EWB_SoccerRole::Attacker && PressTarget.IsValid())
@@ -439,34 +481,6 @@ EWB_SoccerAIIntent AWB_SoccerAIController_Base::ChooseIntent_Implementation()
 		{
 		case EWB_SoccerRole::Defender:
 			return bTeamHasBall ? EWB_SoccerAIIntent::SupportOpen : EWB_SoccerAIIntent::Defend;
-		case EWB_SoccerRole::Goalkeeper:
-			// A free ball inside its zone: the Goalkeeper claims it.
-			if (!bTeamHasBall && Profile->bGoalkeeperClaimsBallInZone && CachedBall.IsValid() && !FindBallCarrier())
-			{
-				if (const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone())
-				{
-					if (Zone->IsLocationInside(CachedBall->GetActorLocation()))
-					{
-						if (IsIntentAllowed(EWB_SoccerAIIntent::SeekBall))
-						{
-							return EWB_SoccerAIIntent::SeekBall;
-						}
-						// Debug filter: SeekBall off, the Goalkeeper keeps guarding.
-						FilteredIntent = EWB_SoccerAIIntent::SeekBall;
-					}
-				}
-			}
-			// The team holds the ball: the Goalkeeper becomes a defender only once the ball is in enemy territory.
-			if (bTeamHasBall && IsBallInEnemyTerritory())
-			{
-				if (IsIntentAllowed(EWB_SoccerAIIntent::LastMan))
-				{
-					return EWB_SoccerAIIntent::LastMan;
-				}
-				// Debug filter: LastMan off, the Goalkeeper keeps guarding.
-				FilteredIntent = EWB_SoccerAIIntent::LastMan;
-			}
-			return EWB_SoccerAIIntent::GuardGoal;
 		default:
 			break; // Attacker: same as the legacy brain below.
 		}
@@ -501,6 +515,19 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	}
 
 	RefreshBall(Me);
+	UpdateObjectMemory();
+
+	// Goalkeeper (devis gardien): threat of this frame, pass chain for the look, shield seen moved. A threat makes it drop a carried object.
+	if (IsGoalkeeping())
+	{
+		bKeeperThreat = ComputeThreat();
+		UpdatePassChain();
+		CheckShieldMoved(Me);
+		if (bKeeperThreat && PlayerStateComp->IsHoldingAnything() && !IsHoldingBall(PlayerStateComp))
+		{
+			Commands->Drop();
+		}
+	}
 
 	// A shot being charged: keep aiming and release on time.
 	if (PlayerStateComp->IsInState(WBTags::Player_State_Kicking) || PlayerStateComp->IsInState(WBTags::Player_State_Throwing))
@@ -522,7 +549,7 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// Debug filter: ChooseIntent skips the optional intents switched off (Press, Goalkeeper claim, LastMan); any other intent switched off becomes Idle.
+	// Debug filter: ChooseIntent skips the optional intents switched off (Press, Goalkeeper claim); any other intent switched off becomes Idle.
 	FilteredIntent = EWB_SoccerAIIntent::Idle;
 	EWB_SoccerAIIntent NewIntent = ChooseIntent();
 	if (!IsIntentAllowed(NewIntent))
@@ -538,6 +565,11 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 		bAimJitterDrawn = false;
 		OnIntentChanged(OldIntent, NewIntent);
 	}
+	// Only the Goalkeeper P1 sprints (devis gardien); every other intent walks at the default speed.
+	if (CurrentIntent != EWB_SoccerAIIntent::KeeperReturn)
+	{
+		Commands->SetSprinting(false);
+	}
 
 	UpdateGoalkeeperStance(Me);
 
@@ -550,7 +582,11 @@ void AWB_SoccerAIController_Base::Tick(float DeltaSeconds)
 	case EWB_SoccerAIIntent::Press:        TickPress(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::Defend:       TickDefend(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::GuardGoal:    TickGuardGoal(Me, DeltaSeconds); break;
-	case EWB_SoccerAIIntent::LastMan:      TickLastMan(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::KeeperReturn: TickKeeperReturn(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::KeeperPatrol: TickKeeperPatrol(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::KeeperFetch:  TickKeeperFetch(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::KeeperPlace:  TickKeeperPlace(Me, DeltaSeconds); break;
+	case EWB_SoccerAIIntent::KeeperSupporter: TickKeeperSupporter(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::SupportOpen:  TickSupportOpen(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::ReceivePass:  TickReceivePass(Me, DeltaSeconds); break;
 	case EWB_SoccerAIIntent::KeepAway:     TickKeepAway(Me, DeltaSeconds); break;
@@ -967,26 +1003,6 @@ void AWB_SoccerAIController_Base::MoveToSupportSpot(ACharacter* Me, const FVecto
 	MoveTowardLocation(Me, Spot);
 }
 
-bool AWB_SoccerAIController_Base::IsBallInEnemyTerritory() const
-{
-	const AActor* Ball = CachedBall.Get();
-	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
-	const UWB_TeamGoalComponent* OtherGoal = GetGoalToAttack();
-	if (!Ball || !OwnGoal || !OtherGoal)
-	{
-		return false;
-	}
-	const FVector Axis = (OtherGoal->GetAimLocation() - OwnGoal->GetAimLocation()) * FVector(1.f, 1.f, 0.f);
-	const double LengthSq = Axis.SizeSquared();
-	if (LengthSq < KINDA_SMALL_NUMBER)
-	{
-		return false;
-	}
-	// Share of the way along the goal - goal axis, 0 at the own goal, 1 at the opponent goal.
-	const double Share = FVector::DotProduct(Ball->GetActorLocation() - OwnGoal->GetAimLocation(), Axis) / LengthSq;
-	return Share > GetActiveProfile()->GoalkeeperAdvanceFieldShare;
-}
-
 bool AWB_SoccerAIController_Base::GetThreatLocation(FVector& OutLocation) const
 {
 	if (const APawn* Carrier = FindBallCarrier())
@@ -1130,95 +1146,6 @@ FVector AWB_SoccerAIController_Base::KeepTeammateDistance(const ACharacter* Me, 
 	}
 	const FVector Adjusted = AnchorLocation + Offset.GetSafeNormal() * FMath::Clamp(Distance, MinDistance, MaxDistance);
 	return FVector(Adjusted.X, Adjusted.Y, Spot.Z);
-}
-
-void AWB_SoccerAIController_Base::TickGuardGoal(ACharacter* Me, float DeltaSeconds)
-{
-	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
-	if (!OwnGoal)
-	{
-		Commands->StopMoving();
-		return;
-	}
-	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	const FVector GoalLocation = OwnGoal->GetAimLocation();
-	FVector Threat;
-	const bool bHasThreat = GetThreatLocation(Threat);
-	const FVector ToThreat = bHasThreat ? (Threat - GoalLocation).GetSafeNormal2D() : FVector::ZeroVector;
-	const FVector Direction = ToThreat.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToThreat;
-
-	// GoalkeeperDistance out of the net perimeter; inside the zone once the threat comes within GoalkeeperRetreatDistance of the perimeter.
-	const float Perimeter = GetPerimeterDistance(Direction);
-	float Distance = Perimeter + Profile->GoalkeeperDistance;
-	if (bHasThreat && Perimeter > 0.f && FVector::Dist2D(Threat, GoalLocation) - Perimeter <= Profile->GoalkeeperRetreatDistance)
-	{
-		Distance = FMath::Max(0.f, Perimeter - Profile->GoalkeeperInsideDepth);
-	}
-	HoldSpot(Me, GoalLocation + Direction * Distance, bHasThreat ? Threat : GoalLocation + Direction * 1000.f, DeltaSeconds);
-}
-
-void AWB_SoccerAIController_Base::TickLastMan(ACharacter* Me, float DeltaSeconds)
-{
-	const UWB_TeamGoalComponent* OwnGoal = GetGoalToDefend();
-	const AActor* Ball = CachedBall.Get();
-	if (!OwnGoal || !Ball)
-	{
-		Commands->StopMoving();
-		return;
-	}
-	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	const FVector GoalLocation = OwnGoal->GetAimLocation();
-	const FVector ToBall = (Ball->GetActorLocation() - GoalLocation) * FVector(1.f, 1.f, 0.f);
-	float Distance = static_cast<float>(ToBall.Size()) * Profile->LastManBallShare;
-
-	// Stay the member nearest to the own goal: behind the teammate closest to it.
-	if (const UWB_TeamCoordinatorComponent* Coordinator = UWB_TeamCoordinatorComponent::GetTeamCoordinator(this, GetTeamIndex()))
-	{
-		for (const FWB_TeamRoleAssignment& Entry : Coordinator->GetAssignments())
-		{
-			if (Entry.Member && Entry.Member.Get() != Me)
-			{
-				Distance = FMath::Min(Distance, static_cast<float>(FVector::Dist2D(Entry.Member->GetActorLocation(), GoalLocation)) - Profile->LastManBehindMargin);
-			}
-		}
-	}
-	const FVector Direction = ToBall.IsNearlyZero() ? OwnGoal->GetFieldDirection() : ToBall.GetSafeNormal();
-	Distance = FMath::Max(Distance, GetPerimeterDistance(Direction) + Profile->GoalkeeperDistance);
-	HoldSpot(Me, GoalLocation + Direction * Distance, Ball->GetActorLocation(), DeltaSeconds);
-}
-
-void AWB_SoccerAIController_Base::UpdateGoalkeeperStance(ACharacter* Me)
-{
-	const UWB_SoccerAIProfile* Profile = GetActiveProfile();
-	// The forced Goalkeeper (gyms) takes the stance even without the team roles.
-	const bool bRolesOn = Profile->bUseTeamRoles || GetForcedRole().MatchesTagExact(WBTags::AI_ForcedRole_Goalkeeper);
-	if (!DiveComp || !bRolesOn || !Profile->bGoalkeeperAutoDefense)
-	{
-		return;
-	}
-	const UWB_GoalkeeperZoneComponent* Zone = GetOwnGoalkeeperZone();
-	const bool bDefending = DiveComp->IsDefending();
-	const bool bGuarding = CurrentRole == EWB_SoccerRole::Goalkeeper
-		&& (CurrentIntent == EWB_SoccerAIIntent::GuardGoal || CurrentIntent == EWB_SoccerAIIntent::SeekBall);
-	// Hysteresis: once in the stance, it is kept until GoalkeeperZoneExitMargin out of the zone.
-	const bool bInZone = Zone && Zone->IsLocationInside(Me->GetActorLocation(), bDefending ? Profile->GoalkeeperZoneExitMargin : 0.f);
-	const bool bWant = bGuarding && bInZone;
-
-	if (bWant && !bDefending && PlayerStateComp->IsInState(WBTags::Player_State_Free) && !PlayerStateComp->IsHoldingAnything())
-	{
-		DiveComp->TryStartDefense();
-	}
-	else if (!bWant && bDefending)
-	{
-		DiveComp->StopDefense();
-	}
-
-	// Goalkeeper in its zone: always faces the ball (the stance would otherwise keep its first facing).
-	const AActor* Ball = CachedBall.Get();
-	if (Ball && CurrentRole == EWB_SoccerRole::Goalkeeper && DiveComp->IsDefending() && bInZone)
-	{
-		DiveComp->SetDefenseFacing(Ball->GetActorLocation() - Me->GetActorLocation());
-	}
 }
 
 FVector AWB_SoccerAIController_Base::GetSupportSpot(const FVector& CarrierLocation, int32 Index) const
@@ -1376,7 +1303,12 @@ void AWB_SoccerAIController_Base::TickAttack(ACharacter* Me, float DeltaSeconds)
 
 void AWB_SoccerAIController_Base::TickCharge(ACharacter* Me, float DeltaSeconds)
 {
-	if (const UWB_TeamGoalComponent* Goal = GetGoalToAttack())
+	if (bChargeFacingOverride)
+	{
+		// Goalkeeper throw of a shield object: keeps facing its target.
+		Commands->SetFacingDirection(ChargeFacing);
+	}
+	else if (const UWB_TeamGoalComponent* Goal = GetGoalToAttack())
 	{
 		Commands->SetFacingDirection(GetShotDirection(Me, Goal));
 	}
@@ -1386,6 +1318,7 @@ void AWB_SoccerAIController_Base::TickCharge(ACharacter* Me, float DeltaSeconds)
 	{
 		Commands->KickRelease();
 		bCharging = false;
+		bChargeFacingOverride = false;
 		bAimJitterDrawn = false;
 	}
 }
@@ -1430,6 +1363,7 @@ void AWB_SoccerAIController_Base::RebuildPath(ACharacter* Me, const FVector& Tar
 				PathPoints.Add(Point.Location);
 			}
 		}
+		bLastPathPartial = bPartial || PathPoints.Num() < 2;
 		float PathLength = 0.f;
 		for (int32 i = 1; i < PathPoints.Num(); ++i)
 		{
@@ -1440,6 +1374,7 @@ void AWB_SoccerAIController_Base::RebuildPath(ACharacter* Me, const FVector& Tar
 	else
 	{
 		BreachWall.Reset();
+		bLastPathPartial = true;
 	}
 
 	// No NavMesh or no path: straight line.
@@ -1688,6 +1623,8 @@ void AWB_SoccerAIController_Base::DrawDebug(const ACharacter* Me) const
 			DrawDebugBox(World, Zone->GetComponentLocation(), Zone->GetScaledBoxExtent(), Zone->GetComponentQuat(), bStance ? FColor::Green : FColor::White, false, -1.f, 0, 2.f);
 		}
 	}
+
+	DrawGoalkeeperDebug(Me);
 
 	if (const UWB_TeamGoalComponent* Goal = GetGoalToAttack())
 	{

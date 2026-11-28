@@ -7,6 +7,8 @@
 #include "WB_SoccerAIController_Base.generated.h"
 
 class ACharacter;
+class UAIPerceptionComponent;
+class UAISenseConfig_Sight;
 class UWB_PlayerCommandComponent;
 class UWB_PlayerDiveComponent;
 class UWB_GoalkeeperZoneComponent;
@@ -33,18 +35,56 @@ enum class EWB_SoccerAIIntent : uint8
 	Press,
 	/** Team roles, Defender while the team defends: stand between the ball (or carrier) and the own goal, inside the defensive zone. */
 	Defend,
-	/** Team roles, Goalkeeper while the team defends: stand in front of the own goal, on the line ball - goal center. */
+	/** Goalkeeper, Threat P2 / P3: stand in front of the own goal on the line ball - goal center (defense stance), look at the carrier, slide or dive on a shot. */
 	GuardGoal,
-	/** Team roles, Goalkeeper while the team holds the ball: move up, staying the member of the team nearest to the own goal. */
-	LastMan,
 	/** Team roles, Defender while the team holds the ball: stand in an open spot near the carrier (free pass lane), sometimes ahead of the ball. */
 	SupportOpen,
 	/** A teammate passed the ball to this bot (AIProfile->bReceivePasses): run to the first point of the ball's path it reaches in time, face the ball and walk into it. */
 	ReceivePass,
 	/** Forced role Aggressive, holding the ball: never shoots, keeps about AggressiveKeepAwayDistance from the nearest opponent (moves away when it comes closer). */
 	KeepAway,
-	/** Forced role Goalkeeper, holding the ball: turns toward the opponent goal and clears the ball forward (short charged kick). */
-	ClearBall
+	/** Goalkeeper holding the ball (after a catch): turns toward the opponent goal and clears the ball forward (short charged kick). */
+	ClearBall,
+	/** Goalkeeper, Threat P1: out of its zone, goes back to its guard spot (sprint while far from its goal, walk once close). Ignores everything else. */
+	KeeperReturn,
+	/** Goalkeeper, No threat: at its goal, sweeps its look to find shield objects (line of sight). */
+	KeeperPatrol,
+	/** Goalkeeper, No threat: goes to a shield object it saw and grabs it. */
+	KeeperFetch,
+	/** Goalkeeper, No threat: carries the held object in front of its goal and drops it (or throws it), then checks the shield coverage. */
+	KeeperPlace,
+	/** Goalkeeper, No threat, no shield found: stays between the ball and its goal, SupporterMinDistance to SupporterMaxDistance from it. */
+	KeeperSupporter
+};
+
+/** Step of the Goalkeeper No threat branch (internal to the bot brain). */
+enum class EWB_KeeperTask : uint8
+{
+	None,
+	Patrol,
+	Fetch,
+	Place,
+	Settle,
+	Supporter,
+	Support
+};
+
+/** An object a bot saw (AIPerception Sight): where and when it was last seen, and its size rank (UWB_GrabLibrary::GetObjectSizeRank, -1 unknown). */
+struct FWB_SeenObject
+{
+	TWeakObjectPtr<AActor> Actor;
+	FVector Location = FVector::ZeroVector;
+	double LastSeenTime = 0.0;
+	int32 SizeRank = -1;
+};
+
+/** An object of the Goalkeeper shield: where it was placed, and since when its place is in view without it (0: not missing). */
+struct FWB_ShieldObject
+{
+	TWeakObjectPtr<AActor> Actor;
+	FVector PlacedLocation = FVector::ZeroVector;
+	int32 SizeRank = -1;
+	double MissingSince = 0.0;
 };
 
 /**
@@ -128,6 +168,38 @@ public:
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	UWB_GoalkeeperZoneComponent* GetOwnGoalkeeperZone() const;
 
+	/** Sight of the bot (sense Sight configured from AIProfile RoleSight / DefaultSight for its role). Walls and objects block the view. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SoccerAI|Sight")
+	TObjectPtr<UAIPerceptionComponent> Perception;
+
+	/** True while the bot plays the Goalkeeper behavior (AI.Behavior.Goalkeeping): its role is Goalkeeper (coordinator or forced role). */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Goalkeeper")
+	bool IsGoalkeeping() const { return CurrentRole == EWB_SoccerRole::Goalkeeper; }
+
+	/** Behavior of the bot brain (AI.Behavior.*): AI.Behavior.Goalkeeping for a Goalkeeper, empty otherwise. Not the state of its character (Player.State.*). */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Goalkeeper")
+	FGameplayTag GetBehaviorTag() const;
+
+	/** Goalkeeper: true when the Threat condition held at the last frame (see ThreatNearAllyCarrierDistance in the profile). */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Goalkeeper")
+	bool IsGoalThreatened() const { return bKeeperThreat; }
+
+	/** Goalkeeper: share (0..1) of the shield grid rays blocked at the last measure. */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Goalkeeper")
+	float GetShieldCoverage() const { return ShieldCoverage; }
+
+	/** Goalkeeper: true when the last measure certified the shield (coverage and objects, see ShieldCoverageThreshold). */
+	UFUNCTION(BlueprintPure, Category = "SoccerAI|Goalkeeper")
+	bool IsShieldCertified() const { return bShieldCertified; }
+
+	/**
+	 * Measures the shield of the goal the bot's team defends now: a grid of ShieldGridColumns x ShieldGridRows rays across the goal mouth (MouthHalfWidth x MouthHeight),
+	 * ShieldTraceLength cm toward the field; only objects of size Medium or bigger block a ray. Returns the blocked share (0..1); OutCertified with the rule
+	 * of ShieldCoverageThreshold. 0 and false without a goal or a profile.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SoccerAI|Goalkeeper")
+	float MeasureShield(bool& OutCertified);
+
 	/** Team of the possessed player (UWB_TeamLibrary::GetTeamOf: its PlayerState, else the copy in its UWB_PlayerHitComponent). -1: no team. */
 	UFUNCTION(BlueprintPure, Category = "SoccerAI")
 	int32 GetTeamIndex() const;
@@ -177,9 +249,9 @@ protected:
 
 	/**
 	 * Picks the intent of this frame. Attack when holding something. With a team role: Press when the coordinator gave a press target,
-	 * Attacker = SeekBall / ChaseCarrier, Defender = Defend (Support when the team has the ball), Goalkeeper = GuardGoal (LastMan when the team has the ball).
+	 * Attacker = SeekBall / ChaseCarrier, Defender = Defend (Support when the team has the ball), Goalkeeper = ChooseGoalkeeperIntent (devis gardien).
 	 * Without a role (legacy): ChaseCarrier / Support when another player has the ball, else SeekBall.
-	 * Debug filter (AIProfile->bUseFeatureFilter): Press, the Goalkeeper claim and LastMan are skipped when switched off; Tick turns any other intent switched off into Idle.
+	 * Debug filter (AIProfile->bUseFeatureFilter): Press and the Goalkeeper claim are skipped when switched off; Tick turns any other intent switched off into Idle.
 	 */
 	UFUNCTION(BlueprintNativeEvent, Category = "SoccerAI")
 	EWB_SoccerAIIntent ChooseIntent();
@@ -197,6 +269,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UWB_PlayerCommandComponent> Commands;
+
+	/** Sense Sight of Perception, set up from the profile at possession and at each role change. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAISenseConfig_Sight> SightConfig;
 
 	/** Defense stance of the Goalkeeper. Optional: without it, no automatic stance. */
 	UPROPERTY(Transient)
@@ -260,9 +336,151 @@ private:
 
 	/** Defender (bDefenderKeepsTeammateDistance): moves Spot toward or away from the teammate Attacker (else the presser) to about DefenderTeammateDistance. */
 	FVector KeepTeammateDistance(const ACharacter* Me, const FVector& Spot) const;
-	void TickGuardGoal(ACharacter* Me, float DeltaSeconds);
-	void TickLastMan(ACharacter* Me, float DeltaSeconds);
 	void TickSupportOpen(ACharacter* Me, float DeltaSeconds);
+
+	// ---- Goalkeeper (devis gardien), in WB_SoccerAIController_Goalkeeper.cpp ----
+
+	/** Goalkeeper intent: ClearBall with the ball; Threat branch (KeeperReturn P1, GuardGoal P2 / P3, SeekBall claim); else the No threat task. */
+	EWB_SoccerAIIntent ChooseGoalkeeperIntent();
+
+	/** Threat condition of the Goalkeeper (inside its UWB_TeamZoneComponent). Without a team zone: true, with a warning once. */
+	bool ComputeThreat();
+
+	/** True while the Goalkeeper stands at its post: inside its goalkeeper zone grown by GoalkeeperDistance (hysteresis GoalkeeperZoneExitMargin). */
+	bool IsAtGoalkeeperPost(const ACharacter* Me);
+
+	/** P1: back to the guard spot, sprint while farther than GoalkeeperRunDistance from the goal. */
+	void TickKeeperReturn(ACharacter* Me, float DeltaSeconds);
+
+	/** P2 / P3: guard spot (ReactionTime, PositioningAccuracy), look (pass delay), shot: slide or dive. */
+	void TickGuardGoal(ACharacter* Me, float DeltaSeconds);
+
+	/** P2 look: the carrier (after the pass delay), a free ball close to the net, else the nearest opponent of the zone. */
+	void UpdateKeeperLook(ACharacter* Me, float DeltaSeconds);
+
+	/** Faces Direction: through the defense stance when in it, else by turning the body. */
+	void KeeperFace(ACharacter* Me, const FVector& Direction, float DeltaSeconds);
+
+	/** Opponent carrier changes (a pass between opponents): updates the pass chain and the look delay. */
+	void UpdatePassChain();
+
+	/** P3: true when the kicked ball heads into the goal mouth. OutBallLocation / OutCross: the ball now and where it crosses the goal line. */
+	bool DetectShot(FVector& OutBallLocation, FVector& OutCross) const;
+
+	/** Guard spot of P2 for a threat at ThreatLocation: GoalkeeperDistance out of the net perimeter, plus the side error. */
+	FVector GetGuardSpot(const FVector& ThreatLocation) const;
+
+	void TickKeeperPatrol(ACharacter* Me, float DeltaSeconds);
+	void TickKeeperFetch(ACharacter* Me, float DeltaSeconds);
+	void TickKeeperPlace(ACharacter* Me, float DeltaSeconds);
+	void TickKeeperSupporter(ACharacter* Me, float DeltaSeconds);
+
+	/** Changes the No threat task and its start time. */
+	void SetKeeperTask(EWB_KeeperTask NewTask);
+
+	/** Best shield object of the memory: the nearest one of at least MinRank (and at most MaxRank), not already in the shield nor skipped. Null: none. */
+	AActor* FindShieldCandidate(int32 MinRank, int32 MaxRank) const;
+
+	/** Where the object being placed must land: ShieldDropOffset in front of the net perimeter, on the line ball - goal center (side slot for a Medium). */
+	FVector GetShieldTarget() const;
+
+	/** Predicted landing point of the held object (sweep down with its bounds box). False when nothing is under it. */
+	bool PredictHeldObjectLanding(const ACharacter* Me, FVector& OutLanding) const;
+
+	/** After the object settled: measures the shield and picks the next task (Support, second Medium, new try, or Supporter). */
+	void EndShieldPlacement();
+
+	/** Shield objects seen moved or missing (line of sight only): leaves the Support task and patrols again. Also measures again when the shield is seen. */
+	void CheckShieldMoved(const ACharacter* Me);
+
+	/** True when the bot could see Location now: in its view cone and sight radius, and no wall in between. */
+	bool IsLocationInView(const ACharacter* Me, const FVector& Location) const;
+
+	/** Sight settings of the current role, applied to SightConfig when they changed. */
+	void ApplySightSettings();
+
+	/** Updates the object memory from the actors seen now (every 0.2 s), and forgets the old ones (ObjectMemoryDuration). */
+	void UpdateObjectMemory();
+
+	/** Size rank of Actor (cached): NoGrab objects and objects without a size give -1. */
+	int32 GetCachedSizeRank(AActor* Actor) const;
+
+	/** Draws the Goalkeeper brain (bDrawGoalkeeperDebug). */
+	void DrawGoalkeeperDebug(const ACharacter* Me) const;
+
+	/** Threat at the last frame (ComputeThreat). */
+	bool bKeeperThreat = false;
+	bool bWarnedNoTeamZone = false;
+
+	/** At the post at the last check (hysteresis of IsAtGoalkeeperPost). */
+	bool bAtKeeperPost = false;
+
+	/** Threat locations of the last frames (time, location), for ReactionTime. */
+	TArray<TPair<double, FVector>> ThreatHistory;
+
+	/** Side error of the guard spot (cm, along the goal mouth) and the time of the next draw. */
+	float PositionError = 0.f;
+	double NextPositionErrorTime = 0.0;
+
+	/** P2 look: the carrier looked at, the last opponent carrier, the pending switch time, and the pass chain. */
+	TWeakObjectPtr<APawn> LookCarrier;
+	TWeakObjectPtr<APawn> LastOpponentCarrier;
+	double LookSwitchTime = 0.0;
+	double LastPassTime = -1000.0;
+	int32 PassChainCount = 0;
+
+	/** P3: shot followed since ShotStartTime; dive already sent for it. */
+	bool bShotActive = false;
+	double ShotStartTime = 0.0;
+	bool bDiveSent = false;
+	FVector ShotBallLocation = FVector::ZeroVector;
+	FVector ShotCross = FVector::ZeroVector;
+	FVector LastDiveDirection = FVector::ZeroVector;
+
+	/** No threat branch. */
+	EWB_KeeperTask KeeperTask = EWB_KeeperTask::None;
+	double KeeperTaskStartTime = 0.0;
+	float PatrolElapsed = 0.f;
+	float PatrolScanPhase = 0.f;
+	TWeakObjectPtr<AActor> KeeperTargetObject;
+	int32 KeeperTargetRank = -1;
+	int32 PlaceAttempts = 0;
+	double NextGrabTryTime = 0.0;
+	double SettleUntil = 0.0;
+	double NextRepatrolTime = 0.0;
+	double NextShieldMeasureTime = 0.0;
+	bool bThrowSent = false;
+
+	/** Path of the last throw of a shield object (PredictProjectilePath from its velocity after the release, debug). */
+	TArray<FVector> ThrowPathPoints;
+	bool bThrowPredicted = false;
+
+	/** Shield: objects placed by the Goalkeeper, objects it gave up on (with the time they can be tried again), last measure. */
+	TArray<FWB_ShieldObject> ShieldObjects;
+	TMap<TWeakObjectPtr<AActor>, double> SkippedShieldObjects;
+	float ShieldCoverage = 0.f;
+	bool bShieldCertified = false;
+
+	/** Shield grid of the last measure (debug): ray start, end, blocked. */
+	struct FShieldRay { FVector Start; FVector End; bool bBlocked; };
+	TArray<FShieldRay> ShieldRays;
+
+	/** Object memory of the bot (Sight), its next update, and the size rank cache. */
+	TArray<FWB_SeenObject> SeenObjects;
+	double NextMemoryUpdateTime = 0.0;
+	mutable TMap<TWeakObjectPtr<AActor>, int32> SizeRankCache;
+
+	/** Sight settings applied last (to skip a reconfiguration when nothing changed). */
+	float AppliedSightRadius = -1.f;
+	float AppliedLoseSightRadius = -1.f;
+	float AppliedSightHalfAngle = -1.f;
+
+	/** True when the last RebuildPath found no complete NavMesh path. */
+	bool bLastPathPartial = false;
+
+	/** Charge of a throw (Goalkeeper placement): the facing kept while charging, instead of the shot aim. */
+	bool bChargeFacingOverride = false;
+	FVector ChargeFacing = FVector::ForwardVector;
 
 	/** Intent of a forced role (GetForcedRole). False when the bot has none (or an unknown one): the normal choice applies. */
 	bool ChooseForcedIntent(const FGameplayTag& ForcedRole, EWB_SoccerAIIntent& OutIntent);
@@ -303,7 +521,7 @@ private:
 	/** Distance (cm) from the own goal aim point to the net perimeter along Direction (0 without a goalkeeper zone). */
 	float GetPerimeterDistance(const FVector& Direction) const;
 
-	/** Goalkeeper bot: enters the defense stance inside its zone, leaves it once out of it (bGoalkeeperAutoDefense). */
+	/** Goalkeeper bot: takes the defense stance at its post in the Threat branch (bGoalkeeperAutoDefense), leaves it otherwise. */
 	void UpdateGoalkeeperStance(ACharacter* Me);
 
 	// ---- Breach (bAllowBreach) ----
@@ -333,9 +551,6 @@ private:
 
 	/** Chases Target (predicted spot) and Dashes on it when EvaluateDash allows it; steps back when too close for the run-up. */
 	void ChaseAndDash(ACharacter* Me, APawn* Target);
-
-	/** True when the ball is past GoalkeeperAdvanceFieldShare of the way from the own goal to the opponent goal (enemy territory). */
-	bool IsBallInEnemyTerritory() const;
 
 	/** Where the defenders look: the opponent carrier, else the ball. False when there is neither. */
 	bool GetThreatLocation(FVector& OutLocation) const;

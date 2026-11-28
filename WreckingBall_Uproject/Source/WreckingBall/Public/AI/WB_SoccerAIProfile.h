@@ -2,7 +2,27 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "AI/Team/WB_SoccerTeamTypes.h"
 #include "WB_SoccerAIProfile.generated.h"
+
+/** Sight of a bot (AIPerception, sense Sight) for one team role. */
+USTRUCT(BlueprintType)
+struct WRECKINGBALL_API FWB_BotSightSettings
+{
+	GENERATED_BODY()
+
+	/** Distance in cm at which the bot starts to see something. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sight", meta = (ClampMin = "0", Units = "Centimeters"))
+	float SightRadius = 2500.f;
+
+	/** Distance in cm at which something already seen is lost (keep it above SightRadius). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sight", meta = (ClampMin = "0", Units = "Centimeters"))
+	float LoseSightRadius = 2800.f;
+
+	/** Half angle in degrees of the view cone, around the facing of the bot. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Sight", meta = (ClampMin = "0", ClampMax = "180", Units = "Degrees"))
+	float PeripheralHalfAngle = 75.f;
+};
 
 /**
  * Tuning of a soccer bot (AWB_SoccerAIController_Base): navigation, ball pickup, Dash on the ball carrier, shooting.
@@ -310,62 +330,237 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Defender|Support", meta = (ClampMin = "0"))
 	float SupportAheadDuration = 2.5f;
 
+	// ---- Goalkeeper (devis gardien): behavior AI.Behavior.Goalkeeping ----
+
+	/** Goalkeeper holding the ball (after a catch): charge time in seconds of its clearing kick toward the opponent goal. Longer = stronger. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0", Units = "Seconds"))
+	float GoalkeeperClearChargeTime = 0.4f;
+
+	/** Draws the Goalkeeper brain: threat, task, guard spot, shot path, dive, shield grid rays (green: blocked, red: open) and coverage, remembered objects. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper")
+	bool bDrawGoalkeeperDebug = false;
+
+	// ---- Goalkeeper, Threat ----
+
+	/**
+	 * Threat condition, checked every frame inside the team zone (UWB_TeamZoneComponent of the team): an opponent holds the ball; or an opponent is there
+	 * and the ball too (free or not); or a teammate holds the ball and an opponent is within this many cm of it. A threat stops the No threat branch at once
+	 * (the held object is dropped). Without a team zone in the level: always a threat (a warning is logged).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Centimeters"))
+	float ThreatNearAllyCarrierDistance = 300.f;
+
+	/** P1: the Goalkeeper out of its zone runs back (sprint) while farther than this many cm from its goal, and walks (default speed) once closer. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Centimeters"))
+	float GoalkeeperRunDistance = 500.f;
+
+	/** P2: the Goalkeeper stands this many cm out of the net perimeter (its UWB_GoalkeeperZoneComponent box), on the line ball - goal center. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Centimeters"))
+	float GoalkeeperDistance = 300.f;
+
+	/** True: in its zone, the Goalkeeper takes the defense stance (Player.State.Defending, the only way to catch a kicked ball). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat")
+	bool bGoalkeeperAutoDefense = true;
+
+	/** Hysteresis of the zone: the Goalkeeper counts as out of its zone (P1, stance left) only once this many cm out of it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Centimeters"))
+	float GoalkeeperZoneExitMargin = 50.f;
+
+	/** True: a free ball inside its zone makes the Goalkeeper go for it (in the stance, the touch catches it). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat")
+	bool bGoalkeeperClaimsBallInZone = true;
+
+	/** P2 look: a free ball is looked at while within this many cm of the net perimeter; farther, the Goalkeeper looks at the nearest opponent in the zone. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Centimeters"))
+	float GoalkeeperLookFreeBallDistance = 500.f;
+
+	/** P2 look: seconds before the Goalkeeper turns toward the new carrier after a pass between opponents (first pass of a chain). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Seconds"))
+	float PassLookDelayBase = 0.1f;
+
+	/** P2 look: seconds added to the delay for each pass chained within PassChainWindow of the previous one. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Seconds"))
+	float PassLookDelayStep = 0.1f;
+
+	/** P2 look: a pass made within this many seconds of the previous one is chained. No pass for that long: the delay is back to PassLookDelayBase. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Seconds"))
+	float PassChainWindow = 0.3f;
+
+	/** P2 look: the pass delay never goes past this many seconds. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Seconds"))
+	float PassLookDelayMax = 0.5f;
+
+	/** P2 difficulty: the guard spot follows where the ball (or carrier) was this many seconds ago. 0: instant. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Seconds"))
+	float ReactionTime = 0.15f;
+
+	/** P2 difficulty: 1 = always on the line ball - goal center; lower = a random side error up to (1 - this) x PositionErrorMax. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", ClampMax = "1"))
+	float PositioningAccuracy = 0.8f;
+
+	/** P2 difficulty: largest side error in cm of the guard spot (PositioningAccuracy 0). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0", Units = "Centimeters"))
+	float PositionErrorMax = 120.f;
+
+	/** P2 difficulty: seconds between two draws of the side error. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Threat", meta = (ClampMin = "0.1", Units = "Seconds"))
+	float PositionErrorInterval = 1.5f;
+
+	/** P3: a kicked ball counts as a shot when its path crosses the goal mouth (MouthHalfWidth and MouthHeight of the goal) grown by this many cm. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shot", meta = (ClampMin = "0", Units = "Centimeters"))
+	float ShotMouthMargin = 50.f;
+
+	/** P3: the shot path passes within this many cm of the Goalkeeper: it is already on it and slides in the stance to stay on it (no dive). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shot", meta = (ClampMin = "0", Units = "Centimeters"))
+	float ShotOnBodyDistance = 70.f;
+
+	/** P3: the Goalkeeper dives only while within this many cm of its post (its UWB_GoalkeeperZoneComponent box grown by GoalkeeperDistance). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shot", meta = (ClampMin = "0", Units = "Centimeters"))
+	float DiveMaxDistance = 300.f;
+
+	/**
+	 * P3: side angle of the dive in degrees, measured from the shot line: 90 = a pure side dive (square to the shot), lower = the dive also goes forward,
+	 * toward the shooter (0 = straight at the ball). The dive then searches the ball in its own cone (DA_PlayerDive_Default).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shot", meta = (ClampMin = "0", ClampMax = "90", Units = "Degrees"))
+	float DiveAngle = 25.f;
+
+	/** P3 difficulty: seconds between the shot detection and the dive (the slide starts at once). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shot", meta = (ClampMin = "0", Units = "Seconds"))
+	float DiveReactionTime = 0.15f;
+
+	/** P3 difficulty: 1 = the dive goes exactly toward the shot; lower = a random yaw error up to (1 - this) x DiveErrorMax. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shot", meta = (ClampMin = "0", ClampMax = "1"))
+	float DiveAccuracy = 0.8f;
+
+	/** P3 difficulty: largest yaw error in degrees of the dive (DiveAccuracy 0). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shot", meta = (ClampMin = "0", ClampMax = "90", Units = "Degrees"))
+	float DiveErrorMax = 20.f;
+
+	/** Shield grid: rays across the goal mouth (MouthHalfWidth and MouthHeight of the goal), columns along its width. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 ShieldGridColumns = 5;
+
+	/** Shield grid: rows along the height of the goal mouth. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "1", ClampMax = "20"))
+	int32 ShieldGridRows = 3;
+
+	/** Shield grid: length in cm of each ray, from the goal mouth toward the field. Only shield objects (Medium or bigger) block a ray. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "10", Units = "Centimeters"))
+	float ShieldTraceLength = 350.f;
+
+	/**
+	 * The shield is certified when this share (0..1) of the rays is blocked, by one Large / XLarge object or by two Medium objects.
+	 * Certified: the Goalkeeper leaves its goal and supports its team.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", ClampMax = "1"))
+	float ShieldCoverageThreshold = 0.4f;
+
+	/** Patrol: seconds the Goalkeeper looks around for shield objects (line of sight). A Large / XLarge seen is fetched at once; at the end, the nearest Medium. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", Units = "Seconds"))
+	float PatrolDuration = 7.f;
+
+	/** Patrol: the Goalkeeper sweeps its look this many degrees to each side of the field direction. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", ClampMax = "180", Units = "Degrees"))
+	float PatrolScanHalfAngle = 80.f;
+
+	/** Patrol: turn speed of the look sweep, in degrees per second. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "1"))
+	float PatrolScanSpeed = 60.f;
+
+	/** Fetch: the Goalkeeper presses Grab once the object is within this many cm of its capsule (closest point of the object bounds), facing it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", Units = "Centimeters"))
+	float ShieldGrabReach = 60.f;
+
+	/** Fetch and carry: seconds before the Goalkeeper gives up on an object it cannot reach or bring (the object is then skipped). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "1", Units = "Seconds"))
+	float ShieldTaskTimeout = 12.f;
+
+	/** Placement: target point this many cm in front of the goalkeeper box (net perimeter), on the line ball - goal center. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", Units = "Centimeters"))
+	float ShieldDropOffset = 100.f;
+
+	/** Placement of two Medium objects: each one is this many cm to one side of the target point, along the goal mouth. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", Units = "Centimeters"))
+	float ShieldMediumSpacing = 80.f;
+
+	/** Placement: the object is let go once its predicted landing point (sweep down with its shape) is within this many cm of the target point. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "1", Units = "Centimeters"))
+	float ShieldDropTolerance = 50.f;
+
+	/**
+	 * Placement, target out of reach (no full NavMesh path, or carried for half of ShieldTaskTimeout): the Goalkeeper throws the object at the smallest
+	 * charge that reaches: charge = distance / this many cm (a full charge throws about this far). Its path is drawn with PredictProjectilePath after the release.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "100", Units = "Centimeters"))
+	float ShieldThrowFullChargeDistance = 1200.f;
+
+	/** Placement: seconds the object is left to settle after the drop or the throw, before the coverage is measured. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", Units = "Seconds"))
+	float ShieldSettleTime = 1.f;
+
+	/** Placement: tries on the same object (fetch it again and replace it) while the coverage stays too low. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "1"))
+	int32 ShieldMaxAttempts = 3;
+
+	/** Shield moved: a shield object seen this many cm from where it was placed counts as moved. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "1", Units = "Centimeters"))
+	float ShieldMovedDistance = 100.f;
+
+	/** Shield moved: seconds the place of a shield object must stay in view without the object before it counts as gone. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Shield", meta = (ClampMin = "0", Units = "Seconds"))
+	float ShieldMissingConfirmTime = 0.5f;
+
+	/** Supporter (no shield found): the Goalkeeper stays at least this many cm from its goal, between the ball and the goal. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Supporter", meta = (ClampMin = "0", Units = "Centimeters"))
+	float SupporterMinDistance = 800.f;
+
+	/** Supporter: the Goalkeeper stays at most this many cm from its goal. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Supporter", meta = (ClampMin = "0", Units = "Centimeters"))
+	float SupporterMaxDistance = 1200.f;
+
+	/** Supporter: cm kept between the Goalkeeper and the ball, on the goal side (it never stands past the ball). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Supporter", meta = (ClampMin = "0", Units = "Centimeters"))
+	float SupporterGapToBall = 300.f;
+
+	/** Supporter: every this many seconds, the Goalkeeper checks its goal again and patrols when it is still unprotected. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper|Supporter", meta = (ClampMin = "1", Units = "Seconds"))
+	float SupporterRepatrolInterval = 15.f;
+
+	// ---- Sight (all bots) ----
+
+	/**
+	 * Sight of the bots (AIPerception, sense Sight), by team role. Walls and objects block the view. A role missing from the map uses DefaultSight.
+	 * The Goalkeeper finds its shield objects with it (only actors with an AIPerceptionStimuliSource, or pawns, are seen).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Sight")
+	TMap<EWB_SoccerRole, FWB_BotSightSettings> RoleSight;
+
+	/** Sight of a role missing from RoleSight (and of the bots without a role). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Sight")
+	FWB_BotSightSettings DefaultSight;
+
+	/** Seconds a seen object stays in the memory of a bot after it was last seen (its last seen place is kept). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Sight", meta = (ClampMin = "0", Units = "Seconds"))
+	float ObjectMemoryDuration = 60.f;
+
+	/** Seen objects: names of the getter (Blueprint interface of the impact sources) and of the Gameplay Tag variable of its PDA_PhysicsProfile. Technical. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Sight")
+	FName PhysicsProfileFunction = TEXT("GetPhysicsProfile");
+
+	/** See PhysicsProfileFunction. Technical. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Sight")
+	FName SizeTagVariable = TEXT("SizeTag");
+
+	/** Actor tag of the objects nobody may grab (BPC_HeldObjectActions refuses them). Checked before the size: such an object is ignored. Technical. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Sight")
+	FName NoGrabTag = TEXT("NoGrab");
+
 	// ---- Forced roles (gyms) ----
 
 	/** Forced role Aggressive (AI.ForcedRole.Aggressive), holding the ball: distance in cm it keeps from the nearest opponent (human or bot). It moves away while the opponent is nearer. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Forced Roles", meta = (ClampMin = "0", Units = "Centimeters"))
 	float AggressiveKeepAwayDistance = 300.f;
-
-	/** Forced role Goalkeeper (AI.ForcedRole.Goalkeeper), holding the ball: charge time in seconds of its clearing kick toward the opponent goal. Longer = stronger. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Forced Roles", meta = (ClampMin = "0", Units = "Seconds"))
-	float GoalkeeperClearChargeTime = 0.4f;
-
-	// ---- Goalkeeper ----
-
-	/**
-	 * The Goalkeeper stands this many cm out of the net perimeter (its UWB_GoalkeeperZoneComponent box), on the line ball - goal center.
-	 * Without a zone, measured from the goal aim point.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
-	float GoalkeeperDistance = 300.f;
-
-	/** When the threat (opponent carrier, else the ball) comes within this many cm of the net perimeter, the Goalkeeper falls back inside its zone. 0: never. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
-	float GoalkeeperRetreatDistance = 600.f;
-
-	/** Fallen back, the Goalkeeper stands this many cm inside the net perimeter, on the line threat - goal center. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
-	float GoalkeeperInsideDepth = 80.f;
-
-	/** True: a Goalkeeper bot enters the defense stance (Player.State.Defending) while it stands inside its zone, and leaves it once out of it. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper")
-	bool bGoalkeeperAutoDefense = true;
-
-	/** Hysteresis of the defense stance: the Goalkeeper leaves it only once this many cm out of its zone. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
-	float GoalkeeperZoneExitMargin = 50.f;
-
-	/** True: a free ball inside its zone makes the Goalkeeper go for it (in the stance, the touch catches it). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper")
-	bool bGoalkeeperClaimsBallInZone = true;
-
-	/**
-	 * When the team holds the ball, the Goalkeeper stays in its goal while the ball is in its own territory, and moves up as the last man (a defender)
-	 * once the ball goes past this share of the way from its goal to the opponent goal. 0.5: the middle line.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0", ClampMax = "1"))
-	float GoalkeeperAdvanceFieldShare = 0.5f;
-
-	/**
-	 * Last man (the team holds the ball): the Goalkeeper moves up to this share of the way from its goal to the ball,
-	 * and stays the member of its team nearest to its goal.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0", ClampMax = "1"))
-	float LastManBallShare = 0.35f;
-
-	/** Last man: cm kept between the Goalkeeper and its goal, compared with the teammate nearest to that goal (it stays behind that teammate). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Goalkeeper", meta = (ClampMin = "0"))
-	float LastManBehindMargin = 200.f;
 
 	// ---- Breach: break walls instead of a long detour (user decision 2026-11-20) ----
 
@@ -438,13 +633,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
 	bool bAllowDefend = true;
 
-	/** Intent GuardGoal (team roles, Goalkeeper in front of its goal). Off: the bot stays Idle instead. */
+	/** Intents GuardGoal and KeeperReturn (Goalkeeper, Threat branch P1 to P3: reach the zone, placement, look, slide). Off: the bot stays Idle instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
 	bool bAllowGuardGoal = true;
 
-	/** Intent LastMan (team roles, Goalkeeper moving up while the team holds the ball). Off: the Goalkeeper keeps GuardGoal. */
+	/** Goalkeeper, No threat branch (patrol, fetch and place the shield objects, supporter). Off: with no threat, the Goalkeeper stays Idle in its goal. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
-	bool bAllowLastMan = true;
+	bool bAllowGoalkeeperShield = true;
 
 	/** Intent SupportOpen (team roles, Defender in an open spot near the carrier). Off: the bot stays Idle instead. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
@@ -453,6 +648,10 @@ public:
 	/** Intent ReceivePass (run to the path of a pass meant for the bot, when bReceivePasses is on). Off: the receiver keeps the intent of its role. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Intents", meta = (EditCondition = "bUseFeatureFilter"))
 	bool bAllowReceivePass = true;
+
+	/** Action dive (Goalkeeper P3). Off: the Goalkeeper only slides in the stance. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Actions", meta = (EditCondition = "bUseFeatureFilter"))
+	bool bAllowDive = true;
 
 	/** Action Dash (on a player, and the wall breach). Off: the bot never Dashes; ChaseCarrier and Press only follow the target. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SoccerAI|Debug|Filter|Actions", meta = (EditCondition = "bUseFeatureFilter"))

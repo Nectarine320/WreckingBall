@@ -177,6 +177,35 @@ void UWB_PlayerCommandComponent::Grab()
 	OnGrabCommand.Broadcast();
 }
 
+void UWB_PlayerCommandComponent::Drop()
+{
+	OnDropCommand.Broadcast();
+}
+
+void UWB_PlayerCommandComponent::SetSprinting(bool bSprint)
+{
+	if (bSprint == bSprintRequested)
+	{
+		return;
+	}
+	bSprintRequested = bSprint;
+	// The sprint lives in the character Blueprint (timelines, energy, bar): call its own events, like the sprint input does.
+	AActor* Owner = GetOwner();
+	const FName EventName = bSprint ? SprintStartEvent : SprintStopEvent;
+	UFunction* Event = Owner ? Owner->FindFunction(EventName) : nullptr;
+	if (!Event || Event->ParmsSize > 0)
+	{
+		if (!bWarnedNoSprintEvent)
+		{
+			bWarnedNoSprintEvent = true;
+			UE_LOG(LogTemp, Warning, TEXT("%s: %s has no event '%s' without parameters (SprintStartEvent / SprintStopEvent). The bot does not sprint."),
+				*GetName(), *GetNameSafe(Owner), *EventName.ToString());
+		}
+		return;
+	}
+	Owner->ProcessEvent(Event, nullptr);
+}
+
 void UWB_PlayerCommandComponent::KickPress()
 {
 	OnKickPressCommand.Broadcast();

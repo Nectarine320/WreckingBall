@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "WB_DataReadLibrary.generated.h"
 
@@ -21,4 +22,15 @@ public:
 	/** Reads the object variable Variable of Object (a curve, a sub-profile...). None when Object is None or has no such object variable. */
 	UFUNCTION(BlueprintPure, Category = "DataRead")
 	static UObject* ReadObject(const UObject* Object, FName Variable);
+
+	/** Reads the Gameplay Tag variable Variable of Object. False (empty tag) when Object is None or has no such Gameplay Tag variable. */
+	UFUNCTION(BlueprintPure, Category = "DataRead", meta = (ReturnDisplayName = "Found"))
+	static bool ReadGameplayTag(const UObject* Object, FName Variable, FGameplayTag& OutTag);
+
+	/**
+	 * Calls the function Function of Object (a Blueprint function or interface function without input, e.g. GetPhysicsProfile) and returns
+	 * its first object output. None when Object is None, has no such function, or the function returns no object.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "DataRead")
+	static UObject* CallObjectGetter(UObject* Object, FName Function);
 };

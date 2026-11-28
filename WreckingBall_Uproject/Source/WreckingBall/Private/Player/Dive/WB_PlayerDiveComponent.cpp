@@ -131,6 +131,14 @@ bool UWB_PlayerDiveComponent::HasMoveInput() const
 	return Pawn && !Pawn->GetLastMovementInputVector().IsNearlyZero(KINDA_SMALL_NUMBER);
 }
 
+bool UWB_PlayerDiveComponent::TryStartDiveToward(FVector WorldDirection)
+{
+	StickOverride = WorldDirection.GetSafeNormal2D();
+	const bool bStarted = TryStartDive();
+	StickOverride = FVector::ZeroVector;
+	return bStarted;
+}
+
 bool UWB_PlayerDiveComponent::TryStartDive()
 {
 	ACharacter* Character = Cast<ACharacter>(GetOwner());
@@ -207,7 +215,7 @@ void UWB_PlayerDiveComponent::PlanDive()
 	StartGroundZ = StartLocation.Z - HalfHeight;
 
 	// Stick direction (last move input, world space). The dive needs a move input; none (called from elsewhere): straight forward.
-	FVector Stick = Character->GetLastMovementInputVector();
+	FVector Stick = StickOverride.IsNearlyZero() ? Character->GetLastMovementInputVector() : StickOverride;
 	Stick.Z = 0.f;
 	Stick = Stick.IsNearlyZero() ? Character->GetActorForwardVector().GetSafeNormal2D() : Stick.GetSafeNormal();
 	const float CosCone = FMath::Cos(FMath::DegreesToRadians(Profile->StickConeHalfAngle));

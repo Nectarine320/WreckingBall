@@ -14,7 +14,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FWB_OnTeamRolesChanged, int32, TeamI
 /**
  * Team manager of the phase F (devis NPC): the only one that decides the roles of its team (Attacker, Defender, Goalkeeper).
  * Two instances on BP_SoccerGamemode, one per team (TeamIndex). Omniscient: it reads every member, the opponents, the ball and the goals.
- * Roles: Attacker = the carrier when the team holds the ball, else the member nearest to the ball; Goalkeeper = the nearest to its goal among the others;
+ * Roles: Goalkeeper = the member nearest to its goal (team of 2 or more; never the Attacker nor the presser, devis gardien); Attacker = the carrier when the team
+ * holds the ball, else the member nearest to the ball among the others;
  * Defender = the rest. On top of that, one bot always presses the opponent attacker. Hysteresis (AIProfile Team section) against flicker.
  * Humans get no order: their role is deduced from their position, and the bots are organized around them.
  * Each bot (AWB_SoccerAIController_Base) receives its role through SetTeamRole. Active only when AIProfile->bUseTeamRoles.

@@ -3,6 +3,9 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Data/WB_DataReadLibrary.h"
+#include "GameFramework/Actor.h"
+#include "Grab/WB_GrabTags.h"
 
 bool UWB_GrabLibrary::IsLargeHeldObject(const UPrimitiveComponent* Held, float MinBoundsRadius)
 {
@@ -92,4 +95,29 @@ FVector UWB_GrabLibrary::GetOverheadThrowTarget(FVector CarryTarget, const UCaps
 		}
 	}
 	return Target;
+}
+
+bool UWB_GrabLibrary::IsGrabExcluded(const AActor* Actor, FName NoGrabTag)
+{
+	return !IsValid(Actor) || Actor->ActorHasTag(NoGrabTag);
+}
+
+FGameplayTag UWB_GrabLibrary::GetObjectSizeTag(AActor* Actor, FName ProfileFunction, FName SizeVariable)
+{
+	FGameplayTag Size;
+	if (IsValid(Actor))
+	{
+		UWB_DataReadLibrary::ReadGameplayTag(UWB_DataReadLibrary::CallObjectGetter(Actor, ProfileFunction), SizeVariable, Size);
+	}
+	return Size;
+}
+
+int32 UWB_GrabLibrary::GetObjectSizeRank(FGameplayTag SizeTag)
+{
+	if (SizeTag.MatchesTagExact(WBTags::Object_Size_Tiny))   { return 0; }
+	if (SizeTag.MatchesTagExact(WBTags::Object_Size_Small))  { return 1; }
+	if (SizeTag.MatchesTagExact(WBTags::Object_Size_Medium)) { return 2; }
+	if (SizeTag.MatchesTagExact(WBTags::Object_Size_Large))  { return 3; }
+	if (SizeTag.MatchesTagExact(WBTags::Object_Size_XLarge)) { return 4; }
+	return -1;
 }

@@ -103,6 +103,13 @@ public:
 	bool TryStartDive();
 
 	/**
+	 * Bot dive request: same as TryStartDive, but WorldDirection (flattened) replaces the stick. Used by the Goalkeeper bot to dive on a shot.
+	 * The ball cone and the target search work as for a human. Returns false when refused (state, defense stance on, no profile).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "PlayerDive", meta = (ReturnDisplayName = "Started"))
+	bool TryStartDiveToward(FVector WorldDirection);
+
+	/**
 	 * Defense stance request (IA_DefensiveDive pressed without moving). Enters Defending (state table, empty hands): X pose, one turn toward a ball within
 	 * DefenseBallTrackRadius then a locked facing, camera-relative moves, blocks the ball. Kept until StopDefense (button released) or another state takes over.
 	 * Returns false when the state is refused or the profile is missing. Costs no energy.
@@ -229,6 +236,9 @@ private:
 
 	/** Missing DiveProfile already reported. */
 	mutable bool bWarnedNoProfile = false;
+
+	/** Stick given by TryStartDiveToward for the next PlanDive (bots). Zero: the real stick (last move input). */
+	FVector StickOverride = FVector::ZeroVector;
 
 	/** Picks the target and fills the planned jump (always succeeds: no ball in the cone means straight along the stick). */
 	void PlanDive();
