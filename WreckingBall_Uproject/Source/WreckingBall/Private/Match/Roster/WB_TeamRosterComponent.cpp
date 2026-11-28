@@ -23,6 +23,7 @@
 #include "Gym/WB_GymTags.h"
 #include "NavigationSystem.h"
 #include "Player/Command/WB_PlayerCommandComponent.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogWBTeamRoster, Log, All);
 
@@ -59,6 +60,14 @@ void UWB_TeamRosterComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Possession->OnBallPossessionChanged.RemoveDynamic(this, &UWB_TeamRosterComponent::HandleBallPossessionChanged);
 	}
 	PendingPasses.Reset();
+	if (UWorld* World = GetWorld())
+	{
+		for (TPair<TWeakObjectPtr<APlayerController>, FHeldSwitchButton>& Held : HeldSwitchButtons)
+		{
+			World->GetTimerManager().ClearTimer(Held.Value.SprintTimer);
+		}
+	}
+	HeldSwitchButtons.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -655,11 +664,46 @@ bool UWB_TeamRosterComponent::SwitchOrPass(APlayerController* PlayerController)
 		return false;
 	}
 	const double Now = World->GetTimeSeconds();
+	UWB_PlayerCommandComponent* Commands = Pawn->FindComponentByClass<UWB_PlayerCommandComponent>();
+	const bool bHoldingBall = Commands && Commands->IsHoldingBall();
+
+	// Sprint on hold: the press arms the sprint timer, whatever happens next (cooldown, ball or not).
+	if (RosterProfile->bSprintOnHold)
+	{
+		FHeldSwitchButton& Held = HeldSwitchButtons.FindOrAdd(PlayerController);
+		World->GetTimerManager().ClearTimer(Held.SprintTimer);
+		Held.PressTime = Now;
+		World->GetTimerManager().SetTimer(Held.SprintTimer,
+			FTimerDelegate::CreateUObject(this, &UWB_TeamRosterComponent::StartHeldSprint, TWeakObjectPtr<APlayerController>(PlayerController)),
+			RosterProfile->SprintHoldTime, false);
+	}
+
 	if (const double* Last = LastSwitchTimes.Find(PlayerController); Last && Now - *Last < RosterProfile->SwitchCooldown)
 	{
 		return false;
 	}
 
+	if (bHoldingBall)
+	{
+		// Charged pass (UWB_PassProfile::bUseChargedPass): the press starts the charge, ReleaseSwitchOrPass sends the pass.
+		if (Commands->BeginPassCharge())
+		{
+			return true;
+		}
+		// World direction of the stick (last movement input), zero at rest.
+		return PassToward(PlayerController, Pawn, Commands, Pawn->GetLastMovementInputVector(), 0.f);
+	}
+
+	// Sprint on hold: without the ball, the switch waits for a short tap (ReleaseSwitchOrPass), so a hold only sprints.
+	if (RosterProfile->bSprintOnHold)
+	{
+		return true;
+	}
+	return SwitchToPointedTeammate(PlayerController, Pawn, Now);
+}
+
+bool UWB_TeamRosterComponent::SwitchToPointedTeammate(APlayerController* PlayerController, APawn* Pawn, double Now)
+{
 	// A pass of this player is on its way: a second press takes the receiver at once.
 	const int32 PendingIndex = PendingPasses.IndexOfByPredicate([PlayerController](const FPendingPass& Pass) { return Pass.PlayerController.Get() == PlayerController; });
 	if (PendingIndex != INDEX_NONE)
@@ -674,20 +718,7 @@ bool UWB_TeamRosterComponent::SwitchOrPass(APlayerController* PlayerController)
 	}
 
 	// World direction of the stick (last movement input), zero at rest.
-	const FVector Direction = Pawn->GetLastMovementInputVector();
-	UWB_PlayerCommandComponent* Commands = Pawn->FindComponentByClass<UWB_PlayerCommandComponent>();
-
-	if (Commands && Commands->IsHoldingBall())
-	{
-		// Charged pass (UWB_PassProfile::bUseChargedPass): the press starts the charge, ReleaseSwitchOrPass sends the pass.
-		if (Commands->BeginPassCharge())
-		{
-			return true;
-		}
-		return PassToward(PlayerController, Pawn, Commands, Direction, 0.f);
-	}
-
-	APawn* Target = UWB_TeamLibrary::FindDirectionalAlly(Pawn, Direction, true);
+	APawn* Target = UWB_TeamLibrary::FindDirectionalAlly(Pawn, Pawn->GetLastMovementInputVector(), true);
 	if (!Target || !SwitchToCharacter(PlayerController, Target))
 	{
 		return false;
@@ -696,10 +727,60 @@ bool UWB_TeamRosterComponent::SwitchOrPass(APlayerController* PlayerController)
 	return true;
 }
 
+void UWB_TeamRosterComponent::StartHeldSprint(TWeakObjectPtr<APlayerController> PlayerController)
+{
+	FHeldSwitchButton* Held = HeldSwitchButtons.Find(PlayerController);
+	APawn* Pawn = PlayerController.IsValid() ? PlayerController->GetPawn() : nullptr;
+	UWB_PlayerCommandComponent* Commands = Pawn ? Pawn->FindComponentByClass<UWB_PlayerCommandComponent>() : nullptr;
+	if (!Held || !Commands)
+	{
+		return;
+	}
+	// Same events as the sprint input (RequestSprintStart): energy, state rules and bar apply. Reset first so a stale wish never blocks the start.
+	Commands->SetSprinting(false);
+	Commands->SetSprinting(true);
+	Held->SprintingPawn = Pawn;
+}
+
 bool UWB_TeamRosterComponent::ReleaseSwitchOrPass(APlayerController* PlayerController)
 {
 	APawn* Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
 	UWB_PlayerCommandComponent* Commands = Pawn ? Pawn->FindComponentByClass<UWB_PlayerCommandComponent>() : nullptr;
+
+	// Sprint on hold: stop the sprint the hold started; a tap (released before the sprint) without the ball switches character.
+	bool bTap = false;
+	if (FHeldSwitchButton* Held = HeldSwitchButtons.Find(PlayerController))
+	{
+		UWorld* World = GetWorld();
+		if (World)
+		{
+			World->GetTimerManager().ClearTimer(Held->SprintTimer);
+		}
+		if (APawn* SprintingPawn = Held->SprintingPawn.Get())
+		{
+			if (UWB_PlayerCommandComponent* SprintCommands = SprintingPawn->FindComponentByClass<UWB_PlayerCommandComponent>())
+			{
+				SprintCommands->SetSprinting(false);
+			}
+		}
+		else
+		{
+			bTap = true;
+		}
+		const double PressTime = Held->PressTime;
+		HeldSwitchButtons.Remove(PlayerController);
+
+		if (bTap && World && Pawn && bBuilt && HasProfile() && RosterProfile->bSprintOnHold && !(Commands && (Commands->IsHoldingBall() || Commands->IsChargingPass())))
+		{
+			const double Now = World->GetTimeSeconds();
+			if (const double* Last = LastSwitchTimes.Find(PlayerController); Last && PressTime - *Last < RosterProfile->SwitchCooldown)
+			{
+				return false;
+			}
+			return SwitchToPointedTeammate(PlayerController, Pawn, Now);
+		}
+	}
+
 	if (!Commands || !Commands->IsChargingPass())
 	{
 		return false;

@@ -28,6 +28,18 @@ public:
 	float SwitchCooldown = 0.2f;
 
 	/**
+	 * True: the switch / pass button also sprints. Held at least SprintHoldTime: the sprint starts (and stops on release); with the ball, the pass
+	 * still charges and leaves on release. Without the ball, the switch happens on a short tap (released before SprintHoldTime), not on the press.
+	 * False: the button switches on the press and never sprints.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Switch|Sprint")
+	bool bSprintOnHold = false;
+
+	/** Seconds the switch / pass button must be held before the sprint starts. A shorter tap without the ball switches character. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Switch|Sprint", meta = (ClampMin = "0.05", Units = "Seconds", EditCondition = "bSprintOnHold"))
+	float SprintHoldTime = 0.2f;
+
+	/**
 	 * True: when a bot teammate of a human takes the ball (loose ball after a lost dribble, rebound, interception...), that human takes the bot at once.
 	 * With several humans in the team, the one who held the ball last in that team, else the nearest. False: the human keeps its character.
 	 */

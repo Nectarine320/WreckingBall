@@ -2,6 +2,19 @@
 
 Reçu le 2026-11-27 (message de Claude++ relayé par l'utilisateur). **À faire après le mandat gym et caméra**, terminé le 2026-11-27 (`bilan-gym-camera-p1`). Un seul lot, **une seule compilation, éditeur fermé**. Mis à jour le 2026-11-27 avec ce bilan.
 
+> **Statut : TERMINÉ le 2026-11-27**, validé par l'utilisateur. Bilan complet dans `bilan-wb-tools.md`. Commits `86f9881`, `8c8ba6a`, `a1b2709`, `32eef6c` (poussés).
+>
+> | Point | État |
+> |---|---|
+> | 1. Menu WB Tools | Fait (sections Level, Content, Animation, Gym, Debug ; entrées supplémentaires par `DA_WBToolsMenu`). |
+> | 2. Sort Level | Fait et testé. |
+> | 3. Retarget | Fait, **dans un sous-lot à part** : interface en 4 sections + profil de retouches par personnage. |
+> | 4. Renommage `_LD` → `_Layout` | Fait pour Soccer Field et la gym Soccer Field. `LV_998` supprimée, IntroMenu garde `_LD` (pas d'équivalent). |
+> | 5. Sélecteur de gym | Fait, avec ajouts (caméra P1 personnelle, liste des levels). |
+> | 6. Touches debug | Fait, avec ajouts (descriptions éditables, commandes séparées). |
+>
+> **Ajouts hors devis**, demandés pendant le lot : outil **Collections**, outil **Create Level** et gabarit `Lv_Template`, suppression de l'ancien système de destruction. Voir le bilan.
+
 ## 1. Menu WB Tools
 - Menu dans la barre principale de l'éditeur, à côté de Help. C++, module `WreckingBallEditor` (via `UToolMenus`).
 - Sections : Level, Animation, Gym, Debug (extensibles).

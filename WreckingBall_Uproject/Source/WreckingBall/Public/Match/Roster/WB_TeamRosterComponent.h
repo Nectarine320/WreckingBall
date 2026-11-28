@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/TimerHandle.h"
 #include "GameplayTagContainer.h"
 #include "Match/Roster/WB_TeamRosterTypes.h"
 #include "WB_TeamRosterComponent.generated.h"
@@ -133,14 +134,16 @@ public:
 	 * With the ball: passes toward the stick (UWB_PlayerCommandComponent::RequestDirectionalPass: aim assist, or a free pass); when a bot drives the receiver, PlayerController takes it as soon as it catches the ball
 	 * (the pass is cancelled if someone else catches it first). Pressed again while the pass travels: takes the receiver at once.
 	 * Never an opponent, never another human's character. Refused during RosterProfile->SwitchCooldown after the last switch or pass.
-	 * Returns true when a switch or a pass happened.
+	 * RosterProfile->bSprintOnHold: the press also starts the sprint timer (sprint after SprintHoldTime), and without the ball the switch waits
+	 * for a short tap (ReleaseSwitchOrPass). Returns true when a switch, a pass or a pass charge happened (or, with bSprintOnHold, the press was taken).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "TeamRoster")
 	bool SwitchOrPass(APlayerController* PlayerController);
 
 	/**
-	 * Release of the switch / pass button (charged pass, UWB_PassProfile::bUseChargedPass): sends the pass charged since SwitchOrPass,
-	 * toward the stick at release, faster the longer the button was held. Does nothing when no pass is charging. Returns true when a pass left.
+	 * Release of the switch / pass button: sends the pass charged since SwitchOrPass (UWB_PassProfile::bUseChargedPass), toward the stick at
+	 * release, faster the longer the button was held. RosterProfile->bSprintOnHold: also stops the sprint started by the hold, and without
+	 * the ball, a tap shorter than SprintHoldTime switches character. Returns true when a pass left or a switch happened.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "TeamRoster")
 	bool ReleaseSwitchOrPass(APlayerController* PlayerController);
@@ -251,6 +254,22 @@ private:
 
 	/** World time of the last switch or pass, per player. */
 	TMap<TWeakObjectPtr<APlayerController>, double> LastSwitchTimes;
+
+	/** RosterProfile->bSprintOnHold: the switch / pass button held by a player, between SwitchOrPass and ReleaseSwitchOrPass. */
+	struct FHeldSwitchButton
+	{
+		double PressTime = 0.0;
+		FTimerHandle SprintTimer;
+		/** Character whose sprint the hold started (stopped on release, even after a switch). None while not sprinting. */
+		TWeakObjectPtr<APawn> SprintingPawn;
+	};
+	TMap<TWeakObjectPtr<APlayerController>, FHeldSwitchButton> HeldSwitchButtons;
+
+	/** Switch part of SwitchOrPass: takes the receiver of a pending pass, else the teammate bot pointed by the stick. Records the switch time. */
+	bool SwitchToPointedTeammate(APlayerController* PlayerController, APawn* Pawn, double Now);
+
+	/** Hold timer of the switch / pass button: starts the sprint of PlayerController's character (UWB_PlayerCommandComponent::SetSprinting). */
+	void StartHeldSprint(TWeakObjectPtr<APlayerController> PlayerController);
 
 	mutable bool bWarnedNoProfile = false;
 
