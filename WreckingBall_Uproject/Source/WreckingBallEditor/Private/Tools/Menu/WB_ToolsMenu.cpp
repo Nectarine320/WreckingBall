@@ -11,6 +11,7 @@
 #include "Misc/Paths.h"
 #include "Styling/AppStyle.h"
 #include "ToolMenus.h"
+#include "Retarget/SWB_RetargetPanel.h"
 #include "Tools/Collections/SWB_CollectionsPanel.h"
 #include "Tools/DebugKeys/SWB_DebugKeysPanel.h"
 #include "Tools/Gym/SWB_GymSelectorPanel.h"
@@ -27,6 +28,7 @@ const FName FWB_ToolsMenu::SortLevelTabId(TEXT("WBTools_SortLevel"));
 const FName FWB_ToolsMenu::GymTabId(TEXT("WBTools_Gym"));
 const FName FWB_ToolsMenu::DebugKeysTabId(TEXT("WBTools_DebugKeys"));
 const FName FWB_ToolsMenu::CollectionsTabId(TEXT("WBTools_Collections"));
+const FName FWB_ToolsMenu::RetargetTabId(TEXT("WBTools_Retarget"));
 
 namespace WBToolsMenu
 {
@@ -96,10 +98,10 @@ namespace WBToolsMenu
 
 		FToolMenuSection& Animation = Menu->AddSection(TEXT("Animation"), LOCTEXT("Animation", "Animation"));
 		Animation.AddMenuEntry(TEXT("Retarget"),
-			LOCTEXT("Retarget", "Retarget (coming soon)"),
-			LOCTEXT("RetargetTip", "Retarget animations from one character to another. Its interface is being designed (next WB Tools lot)."),
+			LOCTEXT("Retarget", "Retarget"),
+			LOCTEXT("RetargetTip", "Copies animations from one character to another: IK Rigs, retargeter, chain mapping, batch retarget and the touch-ups of the target character."),
 			FSlateIcon(),
-			FUIAction(FExecuteAction(), FCanExecuteAction::CreateLambda([]() { return false; })));
+			FUIAction(FExecuteAction::CreateStatic(&FWB_ToolsMenu::OpenTab, FWB_ToolsMenu::RetargetTabId)));
 
 		FToolMenuSection& Gym = Menu->AddSection(TEXT("Gym"), LOCTEXT("Gym", "Gym"));
 		Gym.AddMenuEntry(TEXT("GymSelector"),
@@ -159,6 +161,10 @@ void FWB_ToolsMenu::Register()
 		.SetDisplayName(LOCTEXT("CollectionsTab", "Collections"))
 		.SetMenuType(ETabSpawnerMenuType::Hidden);
 
+	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(RetargetTabId, FOnSpawnTab::CreateStatic(&SpawnPanelTab<SWB_RetargetPanel>))
+		.SetDisplayName(LOCTEXT("RetargetTab", "Retarget"))
+		.SetMenuType(ETabSpawnerMenuType::Hidden);
+
 	StartupHandle = UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateStatic(&ExtendMainMenu));
 }
 
@@ -174,6 +180,7 @@ void FWB_ToolsMenu::Unregister()
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(GymTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(DebugKeysTabId);
 		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(CollectionsTabId);
+		FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(RetargetTabId);
 	}
 }
 

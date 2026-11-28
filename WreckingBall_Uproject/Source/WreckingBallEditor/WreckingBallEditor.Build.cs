@@ -29,5 +29,8 @@ public class WreckingBallEditor : ModuleRules
 
 		// WB Tools > Content > Collections: local collections, the Gameplay Tag picker, the Content Browser asset menu.
 		PrivateDependencyModuleNames.AddRange(new string[] { "CollectionManager", "GameplayTagsEditor", "ContentBrowser" });
+
+		// WB Tools > Animation > Retarget: asset pickers (SObjectPropertyEntryBox).
+		PrivateDependencyModuleNames.AddRange(new string[] { "PropertyEditor", "ContentBrowserData" });
 	}
 }

@@ -12,6 +12,7 @@
 
 class UAnimSequence;
 class UIKRetargeter;
+class UWB_RetargetProfile;
 class UIKRigDefinition;
 class USkeletalMesh;
 
@@ -321,6 +322,15 @@ public:
 	 */
 	UFUNCTION(meta = (AICallable), Category = "Retarget|Fix")
 	static void OffsetBoneRotation(UAnimSequence* Sequence, FName BoneName, FRotator Offset, int32 StartFrame, int32 EndFrame, int32 BlendInFrames, int32 BlendOutFrames);
+
+	/**
+	 * Applies the touch-ups of a retarget profile (notify bone renames, bone rotation fixes) to retargeted assets. The assets are not saved.
+	 * @param Profile Retarget profile of the target character (DA_RetargetProfile_*).
+	 * @param Assets Assets created by RetargetAnimations.
+	 * @return One line per change, and the problems.
+	 */
+	UFUNCTION(meta = (AICallable), Category = "Retarget|Fix")
+	static TArray<FString> ApplyRetargetProfile(UWB_RetargetProfile* Profile, const TArray<UObject*>& Assets);
 
 private:
 	/** Raises a script error that the toolset registry returns to the caller. */

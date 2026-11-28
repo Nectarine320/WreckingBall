@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Retarget/WB_RetargetToolset.h"
+#include "Retarget/WB_RetargetProfile.h"
 
 #include "Animation/AnimBlueprint.h"
 #include "Animation/AnimData/IAnimationDataController.h"
@@ -816,4 +817,16 @@ void UWB_RetargetToolset::OffsetBoneRotation(UAnimSequence* Sequence, FName Bone
 		Controller.AddBoneCurve(BoneName);
 	}
 	Controller.SetBoneTrackKeys(BoneName, Positions, Rotations, Scales);
+}
+
+TArray<FString> UWB_RetargetToolset::ApplyRetargetProfile(UWB_RetargetProfile* Profile, const TArray<UObject*>& Assets)
+{
+	TArray<FString> Log;
+	if (!Profile)
+	{
+		Raise(TEXT("Profile must not be null."));
+		return Log;
+	}
+	Profile->ApplyFixes(Assets, Log);
+	return Log;
 }

@@ -21,4 +21,5 @@ public:
 	static const FName GymTabId;
 	static const FName DebugKeysTabId;
 	static const FName CollectionsTabId;
+	static const FName RetargetTabId;
 };
